@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#070A10">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Header -->
+        <LinearLayout
+            android:paddingLeft="14dp"
+            android:paddingRight="8dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:gravity="center_vertical"
+            android:background="#0C121C"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:id="@+id/appLogo"
+                android:src="@drawable/ic_xau_logo"
+                android:contentDescription="XAUUSD"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginRight="10dp"/>
+
+            <LinearLayout
+                android:orientation="vertical"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content">
+                <TextView
+                    android:text="XAUUSD SCALPER"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:text="Pro Signal  •  biquote live"
+                    android:textColor="#8B95A5"
+                    android:textSize="10sp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/connection"
+                android:text="OFFLINE"
+                android:textColor="#FF6B6B"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+
+            <ImageButton
+                android:id="@+id/menu"
+                android:src="@android:drawable/ic_menu_more"
+                android:contentDescription="Menu"
+                android:background="@drawable/bg_icon_button"
+                android:padding="10dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"/>
+        </LinearLayout>
+
+        <!-- Price Card -->
+        <LinearLayout
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:background="#0A0F18"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:gravity="center_vertical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:text="XAU / USD"
+                        android:textColor="#8B95A5"
+                        android:textSize="11sp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                    <TextView
+                        android:id="@+id/price"
+                        android:text="----.--"
+                        android:textColor="#FFFFFF"
+                        android:textSize="32sp"
+                        android:textStyle="bold"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:gravity="end"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:id="@+id/change"
+                        android:text="—"
+                        android:textColor="#8B95A5"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                    <TextView
+                        android:id="@+id/spread"
+                        android:text="Spread —"
+                        android:textColor="#6D7785"
+                        android:textSize="11sp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_marginTop="6dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <TextView
+                    android:id="@+id/dayHigh"
+                    android:text="H —"
+                    android:textColor="#2ECB7A"
+                    android:textSize="12sp"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:id="@+id/dayLow"
+                    android:text="L —"
+                    android:textColor="#FF5C5C"
+                    android:textSize="12sp"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:id="@+id/m5Bias"
+                    android:text="M5 —"
+                    android:textColor="#A0AAB8"
+                    android:textSize="12sp"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:id="@+id/m1State"
+                    android:text="M1 —"
+                    android:textColor="#A0AAB8"
+                    android:textSize="12sp"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ===== LAMPU ENTRY BESAR ===== -->
+        <LinearLayout
+            android:id="@+id/signalBar"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:background="#0D1520"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content">
+                <TextView
+                    android:id="@+id/signalLamp"
+                    android:text="⚪"
+                    android:textSize="36sp"
+                    android:gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:id="@+id/signalState"
+                    android:text="WAIT"
+                    android:textColor="#9AA3B2"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <View
+                android:background="#1E2A3A"
+                android:layout_width="1dp"
+                android:layout_height="48dp"/>
+
+            <LinearLayout
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingRight="10dp"
+                android:layout_width="0dp"
+                android:layout_weight="2.2"
+                android:layout_height="wrap_content">
+                <TextView
+                    android:id="@+id/signalDetail"
+                    android:text="Menunggu setup Wick-Tip + BOS"
+                    android:textColor="#C8D0DC"
+                    android:textSize="12sp"
+                    android:maxLines="2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"/>
+                <TextView
+                    android:id="@+id/confidence"
+                    android:text="Confidence 0/5"
+                    android:textColor="#6D7785"
+                    android:textSize="11sp"
+                    android:layout_marginTop="2dp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Timeframe + Indicator buttons -->
+        <HorizontalScrollView
+            android:scrollbars="none"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#0A1018">
+            <LinearLayout
+                android:orientation="horizontal"
+                android:padding="6dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+                <Button android:id="@+id/tfM1" android:text="M1" android:textSize="12sp"
+                    android:layout_width="58dp" android:layout_height="36dp" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/tfM5" android:text="M5" android:textSize="12sp"
+                    android:layout_width="58dp" android:layout_height="36dp" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/tfM15" android:text="M15" android:textSize="12sp"
+                    android:layout_width="58dp" android:layout_height="36dp" android:layout_marginEnd="8dp"/>
+                <Button android:id="@+id/indEma" android:text="EMA" android:textSize="11sp"
+                    android:layout_width="58dp" android:layout_height="36dp" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/indSR" android:text="S/R" android:textSize="11sp"
+                    android:layout_width="58dp" android:layout_height="36dp" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/indFib" android:text="FIB" android:textSize="11sp"
+                    android:layout_width="58dp" android:layout_height="36dp"/>
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Chart -->
+        <com.xauusd.scalper.CandleChartView
+            android:id="@+id/chart"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#080C14"/>
+
+        <!-- Bottom control -->
+        <LinearLayout
+            android:orientation="horizontal"
+            android:padding="10dp"
+            android:background="#0C121C"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <Button
+                android:id="@+id/start"
+                android:text="▶ START"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#1B8A4A"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="44dp"
+                android:layout_marginEnd="6dp"/>
+            <Button
+                android:id="@+id/stop"
+                android:text="■ STOP"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#8A1B1B"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="44dp"/>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/log"
+            android:text="Log: Siap"
+            android:textColor="#5A6575"
+            android:textSize="10sp"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingBottom="8dp"
+            android:background="#0C121C"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+
+    <!-- Side Menu -->
+    <ScrollView
+        android:id="@+id/menuPanel"
+        android:visibility="gone"
+        android:background="#E60C121C"
+        android:layout_width="280dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:clickable="true"
+        android:focusable="true">
+        <LinearLayout
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <TextView android:text="MENU" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold"
+                android:paddingBottom="8dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <TextView android:text="MARKET" android:textColor="#6D7785" android:textSize="10sp" android:textStyle="bold"
+                android:paddingLeft="6dp" android:paddingTop="4dp" android:paddingBottom="2dp"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <Button android:id="@+id/menuMarket" android:text="📊  Market" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuChart" android:text="📈  Chart" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuSignal" android:text="🎯  Signal Center" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <TextView android:text="CONFIGURATION" android:textColor="#6D7785" android:textSize="10sp" android:textStyle="bold"
+                android:paddingLeft="6dp" android:paddingTop="10dp" android:paddingBottom="2dp"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <Button android:id="@+id/menuSettings" android:text="⚙  Settings" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuTelegram" android:text="📱  Telegram" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuApi" android:text="🔑  Data &amp; Telegram" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuStrategy" android:text="🧠  Strategy" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuRisk" android:text="💰  Risk Management" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <TextView android:text="TOOLS" android:textColor="#6D7785" android:textSize="10sp" android:textStyle="bold"
+                android:paddingLeft="6dp" android:paddingTop="10dp" android:paddingBottom="2dp"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <Button android:id="@+id/menuHistory" android:text="📋  Signal History" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuLog" android:text="📜  Log" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuNotification" android:text="🔔  Notification &amp; Alarm" android:gravity="left|center_vertical"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+            <Button android:id="@+id/menuClose" android:text="✕  Tutup Menu" android:layout_marginTop="12dp"
+                android:layout_width="match_parent" android:layout_height="46dp"/>
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>

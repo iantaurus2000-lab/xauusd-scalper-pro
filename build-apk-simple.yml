@@ -1,0 +1,49 @@
+name: Build APK (Tanpa Keystore)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Build XAUUSD Scalper V4.2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          # Jika belum ada wrapper, pakai gradle langsung
+          if [ -f gradlew ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle :app:assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Find APK
+        id: find
+        run: |
+          APK=$(find . -name "*.apk" | head -1)
+          echo "APK ditemukan: $APK"
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+          ls -la $APK
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Scalper-V4.2-APK
+          path: ${{ steps.find.outputs.apk_path }}
+          if-no-files-found: error
