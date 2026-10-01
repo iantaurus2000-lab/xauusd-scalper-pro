@@ -6,26 +6,20 @@ plugins {
 android {
     namespace = "com.xauusd.scalper"
     compileSdk = 34
-
     defaultConfig {
         applicationId = "com.xauusd.scalper.v5"
         minSdk = 26
         targetSdk = 34
-        versionCode = 54
-        versionName = "5.4.0"
+        versionCode = 55
+        versionName = "5.5.0"
     }
-
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug { isMinifyEnabled = false }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -33,7 +27,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { viewBinding = true }
 }
-
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
