@@ -3,8 +3,30 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0D1015"
+    android:background="#0A0E14"
     android:padding="10dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="XAUUSD PRO SCALPER"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="14sp" />
+        <TextView
+            android:id="@+id/connection"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="IDLE"
+            android:textColor="#4CAF50"
+            android:textSize="11sp" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/ticker"
@@ -18,89 +40,64 @@
         android:focusable="true"
         android:focusableInTouchMode="true"
         android:scrollHorizontally="true"
-        android:text="Session loading..." />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginTop="6dp">
-
-        <TextView
-            android:id="@+id/price"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="----.--"
-            android:textColor="#FFFFFF"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/connection"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="IDLE"
-            android:textColor="#90A4AE"
-            android:textSize="12sp" />
-    </LinearLayout>
+        android:layout_marginTop="4dp"
+        android:text="Session..." />
 
     <TextView
-        android:id="@+id/session"
+        android:id="@+id/price"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#80CBC4"
-        android:textSize="12sp"
-        android:text="SESSION" />
+        android:text="----.--"
+        android:textColor="#FFFFFF"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:id="@+id/spreadLine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Spread --"
+        android:textColor="#90A4AE"
+        android:textSize="12sp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center"
+        android:background="#121820"
+        android:padding="12dp"
         android:layout_marginTop="8dp"
-        android:padding="8dp"
-        android:background="#161B22">
+        android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/lamp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="⚪"
-            android:textSize="36sp"
-            android:layout_marginEnd="10dp" />
+            android:textSize="40sp"
+            android:layout_marginEnd="12dp" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical">
-
             <TextView
                 android:id="@+id/signalState"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="WAIT"
                 android:textColor="#B0BEC5"
-                android:textSize="18sp"
+                android:textSize="16sp"
                 android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/signalDetail"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Menunggu konfluensi..."
-                android:textColor="#90A4AE"
-                android:textSize="12sp" />
-
             <TextView
                 android:id="@+id/confidence"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Confidence 0/5"
-                android:textColor="#78909C"
-                android:textSize="11sp" />
+                android:text="Score 0%  ★☆☆☆☆"
+                android:textColor="#FFC107"
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -109,55 +106,29 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginTop="6dp">
-
-        <TextView
-            android:id="@+id/m5Bias"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="M5 -"
-            android:textColor="#ECEFF1"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/m1State"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="M1 -"
-            android:textColor="#ECEFF1"
-            android:textSize="12sp" />
+        <TextView android:id="@+id/boxEntry" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="Entry\n--" android:textColor="#ECEFF1" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" />
+        <TextView android:id="@+id/boxSl" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="SL\n--" android:textColor="#EF5350" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
+        <TextView android:id="@+id/boxTp1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP1\n--" android:textColor="#66BB6A" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
+        <TextView android:id="@+id/boxTp2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP2\n--" android:textColor="#66BB6A" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/signalDetail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#78909C"
+        android:textSize="11sp"
+        android:layout_marginTop="4dp"
+        android:text="Confluence checks..." />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="4dp">
-
-        <Button
-            android:id="@+id/tfM1"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:text="M1"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/tfM5"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:text="M5"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/tfM15"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:text="M15"
-            android:textSize="11sp" />
+        android:layout_marginTop="6dp">
+        <Button android:id="@+id/tfM1" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M1" android:textSize="11sp" />
+        <Button android:id="@+id/tfM5" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M5" android:textSize="11sp" />
+        <Button android:id="@+id/tfM15" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M15" android:textSize="11sp" />
     </LinearLayout>
 
     <com.xauusd.scalper.CandleChartView
@@ -165,43 +136,34 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="6dp"
-        android:background="#0D1015" />
+        android:layout_marginTop="6dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+        <TextView android:id="@+id/m5Bias" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="M5 -" android:textColor="#80CBC4" android:textSize="11sp" />
+        <TextView android:id="@+id/m1State" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="M1 -" android:textColor="#80CBC4" android:textSize="11sp" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginTop="6dp">
-
-        <Button
-            android:id="@+id/btnStart"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="START" />
-
-        <Button
-            android:id="@+id/btnResults"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="WINRATE" />
-
-        <Button
-            android:id="@+id/btnRefresh"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="SCAN" />
+        <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="START" />
+        <Button android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="SCAN" />
+        <Button android:id="@+id/btnResults" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="WINRATE" />
+        <Button android:id="@+id/btnFund" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="NEWS" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/log"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#607D8B"
-        android:textSize="11sp"
+        android:textColor="#546E7A"
+        android:textSize="10sp"
         android:layout_marginTop="4dp"
-        android:text="Log: siap" />
+        android:text="Log: biquote ready" />
 </LinearLayout>

@@ -21,9 +21,13 @@ class MainActivity : Activity() {
     private lateinit var confidence: TextView
     private lateinit var m5Bias: TextView
     private lateinit var m1State: TextView
-    private lateinit var session: TextView
     private lateinit var ticker: TextView
     private lateinit var log: TextView
+    private lateinit var spreadLine: TextView
+    private lateinit var boxEntry: TextView
+    private lateinit var boxSl: TextView
+    private lateinit var boxTp1: TextView
+    private lateinit var boxTp2: TextView
     private lateinit var chart: CandleChartView
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var timeframe = "M1"
@@ -41,8 +45,6 @@ class MainActivity : Activity() {
                 price.text = "%.2f".format(p)
                 lastPrice = p
             }
-            i.getStringExtra("bias")?.let { m5Bias.text = "M5 $it" }
-            i.getStringExtra("signal")?.let { signalDetail.text = it }
             i.getStringExtra("log")?.let {
                 ticker.text = it
                 ticker.isSelected = true
@@ -61,16 +63,18 @@ class MainActivity : Activity() {
         confidence = findViewById(R.id.confidence)
         m5Bias = findViewById(R.id.m5Bias)
         m1State = findViewById(R.id.m1State)
-        session = findViewById(R.id.session)
         ticker = findViewById(R.id.ticker)
         log = findViewById(R.id.log)
+        spreadLine = findViewById(R.id.spreadLine)
+        boxEntry = findViewById(R.id.boxEntry)
+        boxSl = findViewById(R.id.boxSl)
+        boxTp1 = findViewById(R.id.boxTp1)
+        boxTp2 = findViewById(R.id.boxTp2)
         chart = findViewById(R.id.chart)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
+        ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
 
         findViewById<Button>(R.id.tfM1).setOnClickListener { timeframe = "M1"; renderChart() }
         findViewById<Button>(R.id.tfM5).setOnClickListener { timeframe = "M5"; renderChart() }
@@ -79,17 +83,29 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnRefresh).setOnClickListener { refresh() }
         findViewById<Button>(R.id.btnResults).setOnClickListener {
             AlertDialog.Builder(this)
-                .setTitle("Winrate / Hasil")
+                .setTitle("Winrate / Journal")
                 .setMessage(ResultsTracker.stats(this))
                 .setPositiveButton("Tutup", null)
                 .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this) }
                 .show()
         }
+        findViewById<Button>(R.id.btnFund).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Fundamental / Session")
+                .setMessage(FundamentalTips.todayBriefing())
+                .setPositiveButton("Tutup", null)
+                .show()
+        }
 
         ticker.isSelected = true
-        session.text = SessionHelper.sessionLabel()
-        ticker.text = SessionHelper.tickerText()
+        ticker.text = SessionHelper.tickerText() + FundamentalTips.tickerExtra()
         refresh()
+        scope.launch {
+            while (isActive) {
+                delay(12_000)
+                refresh()
+            }
+        }
     }
 
     override fun onResume() {
@@ -113,11 +129,10 @@ class MainActivity : Activity() {
     }
 
     private fun startBot() {
-        val i = Intent(this, SignalService::class.java)
-        startForegroundService(i)
+        startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE"
         connection.setTextColor(Color.rgb(70, 230, 150))
-        log.text = "Log: background monitor aktif"
+        log.text = "Log: monitor aktif • biquote"
     }
 
     private fun refresh() {
@@ -129,14 +144,14 @@ class MainActivity : Activity() {
                     m1 = s.m1; m5 = s.m5; m15 = s.m15
                     lastPrice = s.price
                     price.text = "%.2f".format(s.price)
+                    spreadLine.text = "Spread %.2f  •  ${SessionHelper.sessionLabel()}".format(s.spread)
                     connection.text = "LIVE"
                     connection.setTextColor(Color.rgb(70, 230, 150))
-                    session.text = SessionHelper.sessionLabel()
-                    ticker.text = SessionHelper.tickerText()
+                    ticker.text = SessionHelper.tickerText() + FundamentalTips.tickerExtra()
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: scan OK • ${SessionHelper.currentSession()}"
+                    log.text = "Log: biquote OK • score ${st["score"]}% • ${st["checks"] ?: ""}"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -148,10 +163,18 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun stars(n: Int): String = buildString {
+        for (i in 1..5) append(if (i <= n) "★" else "☆")
+    }
+
     private fun applySignal(sig: SignalResult?, st: Map<String, String>) {
         lastSignal = sig
+        val score = st["score"]?.toIntOrNull() ?: 0
+        val starN = st["stars"]?.toIntOrNull() ?: (score / 20)
         m5Bias.text = "M5 ${st["bias"] ?: "-"}"
-        m1State.text = "M1 ${st["entryState"] ?: st["watch"] ?: "WAIT"}"
+        m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
+        confidence.text = "Score $score%  ${stars(starN.coerceIn(0, 5))}"
+
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
             when {
@@ -168,17 +191,22 @@ class MainActivity : Activity() {
                     signalState.setTextColor(Color.rgb(150, 160, 175))
                 }
             }
-            confidence.text = "Score ${st["score"] ?: "-"}"
-            signalDetail.text = "Wick ${st["wick"]} • Sweep ${st["sweep"]} • BOS ${st["bos"]}"
+            signalDetail.text = "RSI ${st["rsi"]} • Spread ${st["spread"]} • Min score 78%"
+            boxEntry.text = "Entry\n--"
+            boxSl.text = "SL\n--"
+            boxTp1.text = "TP1\n--"
+            boxTp2.text = "TP2\n--"
         } else {
             lamp.text = if (sig.side == "BUY") "🟢" else "🔴"
-            signalState.text = "${sig.entryType} • ${sig.state}"
+            signalState.text = "${sig.entryType}\n${sig.state}"
             signalState.setTextColor(
                 if (sig.side == "BUY") Color.rgb(0, 255, 130) else Color.rgb(255, 70, 80)
             )
-            confidence.text = "Confidence ${sig.confidence}/5"
-            signalDetail.text =
-                "Limit ${"%.2f".format(sig.entry)} | SL ${"%.2f".format(sig.sl)} | TP1 ${"%.2f".format(sig.tp1)} | TP2 ${"%.2f".format(sig.tp2)}"
+            signalDetail.text = sig.reason
+            boxEntry.text = "Entry\n${"%.2f".format(sig.entry)}"
+            boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
+            boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
+            boxTp2.text = "TP2\n${"%.2f".format(sig.tp2)}"
         }
     }
 
