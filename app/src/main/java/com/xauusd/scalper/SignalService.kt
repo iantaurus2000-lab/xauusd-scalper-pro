@@ -17,81 +17,83 @@ class SignalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, buildNotification("Monitoring XAUUSD...", false))
+        if (intent?.action == ACTION_STOP) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        startForeground(1, statusNotif("Monitoring XAUUSD...", false))
         scope.launch {
             while (isActive) {
                 try {
                     val snap = Market.snapshot()
                     val (sig, st) = SignalEngine.evaluate(snap)
-                    val watch = st["watch"] ?: "WAIT"
                     if (sig != null && sig.confidence >= 4) {
-                        val key = "${sig.side}-${sig.entry}-${sig.candleTime}"
+                        val key = "${sig.side}-${"%.2f".format(sig.entry)}-${sig.candleTime}"
+                        // Notifikasi HANYA 1 kali per setup unik
                         if (key != lastKey) {
                             lastKey = key
                             val msg = "${sig.entryType} @ ${"%.2f".format(sig.entry)} | SL ${"%.2f".format(sig.sl)} TP1 ${"%.2f".format(sig.tp1)}"
-                            notifyEntry(sig.side, msg)
+                            entryNotif(sig.side, msg)
                             vibrate()
                         }
                     }
-                    val status = if (sig != null) "${sig.entryType} ${sig.state}" else watch
-                    startForeground(1, buildNotification("$status | ${SessionHelper.sessionLabel()}", sig != null))
-                    sendBroadcast(Intent(ACTION).apply {
-                        putExtra("price", snap.price)
-                        putExtra("bias", st["bias"] ?: "")
-                        putExtra("signal", if (sig != null) "${sig.entryType} ${sig.state}" else watch)
-                        putExtra("log", SessionHelper.tickerText())
-                    })
+                    val text = if (sig != null) "${sig.entryType} ${sig.state}" else (st["watch"] ?: "WAIT")
+                    startForeground(1, statusNotif("$text | ${SessionHelper.currentSession()}", sig != null))
                 } catch (e: Exception) {
-                    startForeground(1, buildNotification("Error: ${e.message}", false))
+                    startForeground(1, statusNotif("Error: ${e.message}", false))
                 }
-                delay(20_000)
+                delay(25_000)
             }
         }
         return START_STICKY
     }
 
-    private fun buildNotification(text: String, alert: Boolean): Notification {
-        val chId = "xau_signal"
+    private fun statusNotif(text: String, alert: Boolean): Notification {
+        val ch = "xau_status"
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(
-                NotificationChannel(chId, "XAU Signals", NotificationManager.IMPORTANCE_HIGH)
-            )
+            nm.createNotificationChannel(NotificationChannel(ch, "Status", NotificationManager.IMPORTANCE_LOW))
         }
-        return NotificationCompat.Builder(this, chId)
-            .setContentTitle("XAUUSD Scalper Pro")
+        return NotificationCompat.Builder(this, ch)
+            .setContentTitle("XAUUSD Scalper v5")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)
-            .setPriority(if (alert) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
-    private fun notifyEntry(side: String, detail: String) {
-        val chId = "xau_entry"
+    private fun entryNotif(side: String, detail: String) {
+        val ch = "xau_entry"
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(chId, "Entry Alarm", NotificationManager.IMPORTANCE_HIGH).apply {
+                NotificationChannel(ch, "Entry Alarm", NotificationManager.IMPORTANCE_HIGH).apply {
                     enableVibration(true)
+                    setShowBadge(true)
                 }
             )
         }
-        val n = NotificationCompat.Builder(this, chId)
-            .setContentTitle("$side LIMIT ENTRY")
-            .setContentText(detail)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setAutoCancel(true)
-            .build()
-        nm.notify(2, n)
+        nm.notify(
+            2,
+            NotificationCompat.Builder(this, ch)
+                .setContentTitle("$side LIMIT ENTRY")
+                .setContentText(detail)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+        )
     }
 
     private fun vibrate() {
         try {
             if (Build.VERSION.SDK_INT >= 31) {
-                val vm = getSystemService(VibratorManager::class.java)
-                vm.defaultVibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400), -1))
+                getSystemService(VibratorManager::class.java)
+                    .defaultVibrator
+                    .vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400), -1))
             } else {
                 @Suppress("DEPRECATION")
                 val v = getSystemService(VIBRATOR_SERVICE) as Vibrator
@@ -109,5 +111,6 @@ class SignalService : Service() {
 
     companion object {
         const val ACTION = "com.xauusd.scalper.UPDATE"
+        const val ACTION_STOP = "com.xauusd.scalper.STOP"
     }
 }

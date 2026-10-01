@@ -14,6 +14,7 @@ import kotlinx.coroutines.*
 
 class MainActivity : Activity() {
     private lateinit var price: TextView
+    private lateinit var priceChange: TextView
     private lateinit var connection: TextView
     private lateinit var lamp: TextView
     private lateinit var signalState: TextView
@@ -29,33 +30,26 @@ class MainActivity : Activity() {
     private lateinit var boxTp1: TextView
     private lateinit var boxTp2: TextView
     private lateinit var chart: CandleChartView
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var tickJob: Job? = null
+    private var scanJob: Job? = null
+    private var running = false
+
     private var timeframe = "M1"
     private var m1: List<Candle> = emptyList()
     private var m5: List<Candle> = emptyList()
     private var m15: List<Candle> = emptyList()
     private var lastPrice = Double.NaN
     private var lastSignal: SignalResult? = null
-
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context?, i: Intent?) {
-            i ?: return
-            val p = i.getDoubleExtra("price", Double.NaN)
-            if (!p.isNaN()) {
-                price.text = "%.2f".format(p)
-                lastPrice = p
-            }
-            i.getStringExtra("log")?.let {
-                ticker.text = it
-                ticker.isSelected = true
-            }
-        }
-    }
+    private var lastNotifiedKey = ""
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         setContentView(R.layout.activity_main)
+
         price = findViewById(R.id.price)
+        priceChange = findViewById(R.id.priceChange)
         connection = findViewById(R.id.connection)
         lamp = findViewById(R.id.lamp)
         signalState = findViewById(R.id.signalState)
@@ -74,69 +68,124 @@ class MainActivity : Activity() {
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
 
         findViewById<Button>(R.id.tfM1).setOnClickListener { timeframe = "M1"; renderChart() }
         findViewById<Button>(R.id.tfM5).setOnClickListener { timeframe = "M5"; renderChart() }
         findViewById<Button>(R.id.tfM15).setOnClickListener { timeframe = "M15"; renderChart() }
-        findViewById<Button>(R.id.btnStart).setOnClickListener { startBot() }
-        findViewById<Button>(R.id.btnRefresh).setOnClickListener { refresh() }
-        findViewById<Button>(R.id.btnResults).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Winrate / Journal")
-                .setMessage(ResultsTracker.stats(this))
-                .setPositiveButton("Tutup", null)
-                .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this) }
-                .show()
-        }
-        findViewById<Button>(R.id.btnFund).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Fundamental / Session")
-                .setMessage(FundamentalTips.todayBriefing())
-                .setPositiveButton("Tutup", null)
-                .show()
-        }
+
+        findViewById<Button>(R.id.btnStart).setOnClickListener { startAll() }
+        findViewById<Button>(R.id.btnStop).setOnClickListener { stopAll() }
+        findViewById<Button>(R.id.btnMenu).setOnClickListener { showMenu() }
 
         ticker.isSelected = true
-        ticker.text = SessionHelper.tickerText() + FundamentalTips.tickerExtra()
-        refresh()
-        scope.launch {
+        ticker.text = SessionHelper.tickerText()
+
+        // Harga 1 detik selalu (tanpa START juga)
+        startPriceLoop()
+        // Scan sinyal pertama
+        fullScan()
+    }
+
+    private fun showMenu() {
+        val items = arrayOf(
+            "Scan sinyal sekarang",
+            "Winrate / Journal",
+            "Fundamental / News",
+            "Stop monitor",
+            "Keluar aplikasi"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Menu")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> fullScan()
+                    1 -> AlertDialog.Builder(this)
+                        .setTitle("Winrate")
+                        .setMessage(ResultsTracker.stats(this))
+                        .setPositiveButton("Tutup", null)
+                        .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this) }
+                        .show()
+                    2 -> AlertDialog.Builder(this)
+                        .setTitle("Fundamental")
+                        .setMessage(FundamentalTips.todayBriefing())
+                        .setPositiveButton("Tutup", null)
+                        .show()
+                    3 -> stopAll()
+                    4 -> exitApp()
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun startAll() {
+        running = true
+        startForegroundService(Intent(this, SignalService::class.java))
+        connection.text = "● LIVE 1s"
+        connection.setTextColor(Color.rgb(0, 230, 118))
+        log.text = "Log: START • monitor + notifikasi aktif"
+        fullScan()
+    }
+
+    private fun stopAll() {
+        running = false
+        try {
+            stopService(Intent(this, SignalService::class.java))
+        } catch (_: Exception) {}
+        connection.text = "● STOPPED"
+        connection.setTextColor(Color.rgb(255, 152, 0))
+        log.text = "Log: STOP • service dimatikan"
+    }
+
+    private fun exitApp() {
+        stopAll()
+        tickJob?.cancel()
+        scanJob?.cancel()
+        scope.cancel()
+        finishAffinity()
+        // Pastikan proses keluar
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun startPriceLoop() {
+        tickJob?.cancel()
+        tickJob = scope.launch {
             while (isActive) {
-                delay(12_000)
-                refresh()
+                try {
+                    val t = withContext(Dispatchers.IO) { Market.tick() }
+                    val prev = lastPrice
+                    lastPrice = t.mid
+                    price.text = "%.2f".format(t.mid)
+                    val ch = if (prev.isNaN()) 0.0 else t.mid - prev
+                    priceChange.text = (if (ch >= 0) "+" else "") + "%.2f".format(ch)
+                    priceChange.setTextColor(
+                        if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80)
+                    )
+                    spreadLine.text = "Spread %.2f".format(t.spread)
+                    connection.text = "● LIVE 1s"
+                    connection.setTextColor(Color.rgb(0, 230, 118))
+                    // Update last candle close visual
+                    if (m1.isNotEmpty()) {
+                        val last = m1.last()
+                        m1 = m1.dropLast(1) + last.copy(close = t.mid, high = maxOf(last.high, t.mid), low = minOf(last.low, t.mid))
+                        renderChart()
+                    }
+                } catch (e: Exception) {
+                    connection.text = "● OFFLINE"
+                    connection.setTextColor(Color.rgb(255, 90, 90))
+                    log.text = "Log: tick ${e.message}"
+                }
+                delay(1000)
             }
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, IntentFilter(SignalService.ACTION), RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(receiver, IntentFilter(SignalService.ACTION))
-        }
-    }
-
-    override fun onPause() {
-        try { unregisterReceiver(receiver) } catch (_: Exception) {}
-        super.onPause()
-    }
-
-    override fun onDestroy() {
-        scope.cancel()
-        super.onDestroy()
-    }
-
-    private fun startBot() {
-        startForegroundService(Intent(this, SignalService::class.java))
-        connection.text = "LIVE"
-        connection.setTextColor(Color.rgb(70, 230, 150))
-        log.text = "Log: monitor aktif • biquote"
-    }
-
-    private fun refresh() {
-        scope.launch(Dispatchers.IO) {
+    private fun fullScan() {
+        scanJob?.cancel()
+        scanJob = scope.launch(Dispatchers.IO) {
             try {
                 val s = Market.snapshot(lastPrice)
                 val (sig, st) = SignalEngine.evaluate(s)
@@ -145,19 +194,15 @@ class MainActivity : Activity() {
                     lastPrice = s.price
                     price.text = "%.2f".format(s.price)
                     spreadLine.text = "Spread %.2f  •  ${SessionHelper.sessionLabel()}".format(s.spread)
-                    connection.text = "LIVE"
-                    connection.setTextColor(Color.rgb(70, 230, 150))
                     ticker.text = SessionHelper.tickerText() + FundamentalTips.tickerExtra()
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: biquote OK • score ${st["score"]}% • ${st["checks"] ?: ""}"
+                    log.text = "Log: scan OK • score ${st["score"]}%"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    connection.text = "ERROR"
-                    connection.setTextColor(Color.rgb(255, 90, 90))
-                    log.text = "Log: ${e.message}"
+                    log.text = "Log: scan ${e.message}"
                 }
             }
         }
@@ -171,27 +216,30 @@ class MainActivity : Activity() {
         lastSignal = sig
         val score = st["score"]?.toIntOrNull() ?: 0
         val starN = st["stars"]?.toIntOrNull() ?: (score / 20)
-        m5Bias.text = "M5 ${st["bias"] ?: "-"}"
-        m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
-        confidence.text = "Score $score%  ${stars(starN.coerceIn(0, 5))}"
+        m5Bias.text = "● M5 ${st["bias"] ?: "-"}"
+        m1State.text = "● M1 ${st["watch"] ?: "WAIT"}"
+        confidence.text = "SIGNAL STRENGTH  ${stars(starN.coerceIn(0, 5))}  ($score%)"
 
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
             when {
                 w.contains("BUY") -> {
-                    lamp.text = "🟢"; signalState.text = w
-                    signalState.setTextColor(Color.rgb(0, 220, 120))
+                    lamp.text = "🟢"
+                    signalState.text = w
+                    signalState.setTextColor(Color.rgb(0, 230, 118))
                 }
                 w.contains("SELL") -> {
-                    lamp.text = "🔴"; signalState.text = w
-                    signalState.setTextColor(Color.rgb(255, 80, 80))
+                    lamp.text = "🔴"
+                    signalState.text = w
+                    signalState.setTextColor(Color.rgb(239, 83, 80))
                 }
                 else -> {
-                    lamp.text = "⚪"; signalState.text = w
-                    signalState.setTextColor(Color.rgb(150, 160, 175))
+                    lamp.text = "⚪"
+                    signalState.text = w
+                    signalState.setTextColor(Color.rgb(176, 190, 197))
                 }
             }
-            signalDetail.text = "RSI ${st["rsi"]} • Spread ${st["spread"]} • Min score 78%"
+            signalDetail.text = "RSI ${st["rsi"]} • Spread ${st["spread"]} • Min 78%"
             boxEntry.text = "Entry\n--"
             boxSl.text = "SL\n--"
             boxTp1.text = "TP1\n--"
@@ -207,6 +255,12 @@ class MainActivity : Activity() {
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
             boxTp2.text = "TP2\n${"%.2f".format(sig.tp2)}"
+
+            // Notif hanya 1x per sinyal unik
+            val key = "${sig.side}-${"%.2f".format(sig.entry)}-${sig.candleTime}"
+            if (key != lastNotifiedKey && running) {
+                lastNotifiedKey = key
+            }
         }
     }
 
@@ -218,5 +272,12 @@ class MainActivity : Activity() {
         }
         chart.setLayers(true, true)
         chart.setData(data, timeframe, if (lastPrice.isNaN()) null else lastPrice, lastSignal)
+    }
+
+    override fun onDestroy() {
+        tickJob?.cancel()
+        scanJob?.cancel()
+        scope.cancel()
+        super.onDestroy()
     }
 }
