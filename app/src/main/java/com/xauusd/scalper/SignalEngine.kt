@@ -4,132 +4,160 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * High-accuracy scalping engine
- * Filters: Session + M5 bias + Sweep + Wick + BOS + RSI + EMA
- * Entry mode: BUY LIMIT / SELL LIMIT (retrace to wick tip)
+ * Professional confluence engine — skor 0–100, sinyal hanya jika ≥ 78.
+ * BUY rules (dari spesifikasi user):
+ * - M5: price > EMA50 && EMA20 > EMA50
+ * - M1: pullback ke EMA20 + struktur bullish
+ * - RSI 40–65
+ * - Range candle > rata-rata 10 (proxy volume CFD)
+ * - Session London / NY (WITA)
+ * - Spread ≤ 0.25
+ * - Di atas support, jauh dari resistance
  */
 object SignalEngine {
-    private fun body(c: Candle) = abs(c.close - c.open)
-    private fun lowerWick(c: Candle) = minOf(c.open, c.close) - c.low
-    private fun upperWick(c: Candle) = c.high - maxOf(c.open, c.close)
+
+    data class Confluence(
+        val score: Int,
+        val stars: Int,
+        val checks: Map<String, Boolean>,
+        val side: String
+    )
 
     fun evaluate(s: MarketSnapshot): Pair<SignalResult?, Map<String, String>> {
-        if (s.m1.size < 30 || s.m5.size < 60) {
+        if (s.m1.size < 40 || s.m5.size < 60) {
             return null to mapOf(
                 "bias" to "WAITING",
-                "watch" to "WAIT",
+                "watch" to "LOADING",
+                "score" to "0",
                 "session" to SessionHelper.sessionLabel()
             )
         }
 
-        val m1 = s.m1
-        val m5 = s.m5
-        val i5 = IndicatorEngine.snapshot(m5)
-        val i1 = IndicatorEngine.snapshot(m1)
+        val i5 = IndicatorEngine.snapshot(s.m5)
+        val i1 = IndicatorEngine.snapshot(s.m1)
+        val c1 = s.m1.last()
+        val prev = s.m1[s.m1.lastIndex - 1]
+
+        // --- BUY checks ---
+        val buyTrend = s.m5.last().close > i5.ema50 && i5.ema20 > i5.ema50
+        val buyPullback = abs(c1.low - i1.ema20) <= max(i1.atr14 * 0.45, 0.35) ||
+            (c1.close > i1.ema20 && prev.low <= i1.ema20 * 1.0002)
+        val buyRsi = i1.rsi14 in 40.0..65.0
+        val avgRange = s.m1.takeLast(11).dropLast(1).map { it.high - it.low }.average()
+        val buyVol = (c1.high - c1.low) >= avgRange * 0.95 // proxy volume
         val sessionOk = SessionHelper.isGoodSession()
-        val best = SessionHelper.isBestSession()
+        val buySpread = s.spread <= 0.25
+        val buyStruct = s.price > i1.support && abs(i1.resistance - s.price) > i1.atr14 * 0.6
+        val buyBos = c1.close > prev.high || c1.close > s.m1.takeLast(8).dropLast(1).maxOf { it.high } * 0.999
 
-        val bias = when {
-            i5.ema20 > i5.ema50 && m5.last().close > i5.ema20 -> "BUY"
-            i5.ema20 < i5.ema50 && m5.last().close < i5.ema20 -> "SELL"
-            else -> "NEUTRAL"
+        val buyFlags = linkedMapOf(
+            "trend_m5" to buyTrend,
+            "pullback_m1" to buyPullback,
+            "rsi" to buyRsi,
+            "range_vol" to buyVol,
+            "session" to sessionOk,
+            "spread" to buySpread,
+            "structure" to buyStruct,
+            "bos" to buyBos
+        )
+        val buyHits = buyFlags.values.count { it }
+        val buyScore = (buyHits * 100) / 8
+
+        // --- SELL checks (mirror) ---
+        val sellTrend = s.m5.last().close < i5.ema50 && i5.ema20 < i5.ema50
+        val sellPullback = abs(c1.high - i1.ema20) <= max(i1.atr14 * 0.45, 0.35) ||
+            (c1.close < i1.ema20 && prev.high >= i1.ema20 * 0.9998)
+        val sellRsi = i1.rsi14 in 35.0..60.0
+        val sellVol = buyVol
+        val sellSpread = buySpread
+        val sellStruct = s.price < i1.resistance && abs(s.price - i1.support) > i1.atr14 * 0.6
+        val sellBos = c1.close < prev.low || c1.close < s.m1.takeLast(8).dropLast(1).minOf { it.low } * 1.001
+
+        val sellFlags = linkedMapOf(
+            "trend_m5" to sellTrend,
+            "pullback_m1" to sellPullback,
+            "rsi" to sellRsi,
+            "range_vol" to sellVol,
+            "session" to sessionOk,
+            "spread" to sellSpread,
+            "structure" to sellStruct,
+            "bos" to sellBos
+        )
+        val sellHits = sellFlags.values.count { it }
+        val sellScore = (sellHits * 100) / 8
+
+        val side: String
+        val score: Int
+        val flags: Map<String, Boolean>
+        when {
+            buyScore >= sellScore && buyScore >= 78 -> {
+                side = "BUY"; score = buyScore; flags = buyFlags
+            }
+            sellScore > buyScore && sellScore >= 78 -> {
+                side = "SELL"; score = sellScore; flags = sellFlags
+            }
+            else -> {
+                val watch = when {
+                    !sessionOk -> "OFF SESSION"
+                    s.spread > 0.25 -> "SPREAD HIGH"
+                    buyScore >= 50 -> "BUY WATCH ${buyScore}%"
+                    sellScore >= 50 -> "SELL WATCH ${sellScore}%"
+                    else -> "WAIT"
+                }
+                return null to mapOf(
+                    "bias" to when {
+                        buyTrend -> "BUY"
+                        sellTrend -> "SELL"
+                        else -> "NEUTRAL"
+                    },
+                    "watch" to watch,
+                    "score" to max(buyScore, sellScore).toString(),
+                    "stars" to (max(buyScore, sellScore) / 20).coerceIn(0, 5).toString(),
+                    "session" to SessionHelper.sessionLabel(),
+                    "rsi" to "%.1f".format(i1.rsi14),
+                    "spread" to "%.2f".format(s.spread)
+                )
+            }
         }
 
-        val sweep = m1[m1.lastIndex - 2]
-        val confirm = m1[m1.lastIndex - 1]
-        val prior = m1.subList(max(0, m1.lastIndex - 12), m1.lastIndex - 2)
-        val ph = prior.maxOf { it.high }
-        val pl = prior.minOf { it.low }
-
-        val bullW = lowerWick(sweep) >= max(body(sweep) * 1.6, i1.atr14 * 0.25) && sweep.close > sweep.open
-        val bearW = upperWick(sweep) >= max(body(sweep) * 1.6, i1.atr14 * 0.25) && sweep.close < sweep.open
-        val sweepLow = sweep.low < pl && sweep.close > pl
-        val sweepHigh = sweep.high > ph && sweep.close < ph
-        val bosBuy = confirm.close > sweep.high
-        val bosSell = confirm.close < sweep.low
-
-        var buyScore = 0
-        var sellScore = 0
-        if (bias == "BUY") buyScore++
-        if (bias == "SELL") sellScore++
-        if (bullW) buyScore++
-        if (bearW) sellScore++
-        if (sweepLow) buyScore++
-        if (sweepHigh) sellScore++
-        if (bosBuy) buyScore++
-        if (bosSell) sellScore++
-        if (i1.rsi14 in 42.0..65.0) buyScore++
-        if (i1.rsi14 in 35.0..58.0) sellScore++
-        if (sessionOk && best) {
-            if (buyScore >= 3) buyScore++
-            if (sellScore >= 3) sellScore++
+        val stars = (score / 20).coerceIn(1, 5)
+        val limit = if (side == "BUY") {
+            // limit di area EMA20 / low wick
+            minOf(i1.ema20, c1.low)
+        } else {
+            maxOf(i1.ema20, c1.high)
         }
-
-        // Spread filter: skip if spread too wide for scalping
-        if (s.spread > 0.80) {
-            return null to mapOf(
-                "bias" to bias,
-                "watch" to "SPREAD HIGH",
-                "session" to SessionHelper.sessionLabel()
-            )
-        }
-
-        val side = when {
-            !sessionOk -> ""
-            buyScore >= 4 -> "BUY"
-            sellScore >= 4 -> "SELL"
-            else -> ""
-        }
+        val risk = max(i1.atr14 * 0.9, 0.50)
+        val sl = if (side == "BUY") limit - risk else limit + risk
+        val tp1 = if (side == "BUY") limit + risk else limit - risk
+        val tp2 = if (side == "BUY") limit + risk * 1.8 else limit - risk * 1.8
+        val near = abs(s.price - limit) <= max(i1.atr14 * 0.4, 0.30)
+        val entryType = if (side == "BUY") "BUY LIMIT" else "SELL LIMIT"
+        val state = if (near) "ENTRY READY" else "LIMIT PENDING"
 
         val status = mutableMapOf(
-            "bias" to bias,
-            "wick" to if (bullW || bearW) "OK" else "WAIT",
-            "sweep" to if (sweepLow || sweepHigh) "OK" else "WAIT",
-            "bos" to if (bosBuy || bosSell) "OK" else "WAIT",
-            "rsi" to "%.1f".format(i1.rsi14),
+            "bias" to side,
+            "watch" to state,
+            "score" to score.toString(),
+            "stars" to stars.toString(),
             "session" to SessionHelper.sessionLabel(),
-            "score" to "B$buyScore/S$sellScore"
+            "rsi" to "%.1f".format(i1.rsi14),
+            "spread" to "%.2f".format(s.spread),
+            "checks" to flags.filter { it.value }.keys.joinToString(",")
         )
-
-        if (side.isEmpty()) {
-            status["watch"] = when {
-                !sessionOk -> "OFF SESSION"
-                bias == "BUY" && (bullW || sweepLow) -> "BUY WATCH"
-                bias == "SELL" && (bearW || sweepHigh) -> "SELL WATCH"
-                else -> "WAIT"
-            }
-            return null to status
-        }
-
-        // LIMIT entry at wick tip (manual or auto-limit style)
-        val limitPrice = if (side == "BUY") sweep.low else sweep.high
-        val risk = max(
-            abs(limitPrice - if (side == "BUY") i1.support else i1.resistance),
-            max(i1.atr14 * 0.8, 0.50)
-        )
-        val sl = if (side == "BUY") limitPrice - risk else limitPrice + risk
-        val tp1 = if (side == "BUY") limitPrice + risk else limitPrice - risk
-        val tp2 = if (side == "BUY") limitPrice + risk * 1.8 else limitPrice - risk * 1.8
-        val near = abs(s.price - limitPrice) <= max(i1.atr14 * 0.35, 0.25)
-        val conf = max(buyScore, sellScore).coerceIn(1, 5)
-        val entryType = if (side == "BUY") "BUY LIMIT" else "SELL LIMIT"
-        val state = if (near) "LIMIT FILL ZONE" else "LIMIT PENDING"
-
-        status["entryState"] = state
-        status["watch"] = state
 
         return SignalResult(
             side = side,
             state = state,
-            entry = limitPrice,
+            entry = limit,
             entryType = entryType,
             sl = sl,
             tp1 = tp1,
             tp2 = tp2,
-            confidence = conf,
-            candleTime = confirm.time,
-            setup = "Session+Sweep+Wick+BOS → $entryType",
-            reason = if (near) "Harga di zona limit • siap fill" else "Pasang $entryType @ ${"%.2f".format(limitPrice)}"
+            confidence = stars,
+            candleTime = c1.time,
+            setup = "Confluence $score% (≥78) → $entryType",
+            reason = "Score $score/100 • ${flags.count { it.value }}/8 checks"
         ) to status
     }
 }

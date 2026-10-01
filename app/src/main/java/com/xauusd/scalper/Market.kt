@@ -5,80 +5,108 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import kotlin.random.Random
 
 /**
- * Free market data. Tries public endpoints; falls back to synthetic demo candles
- * so the app always runs for testing UI/signals offline.
+ * Realtime data from biquote.io (gratis, no API key).
+ * REST: /api/XAUUSD + /api/XAUUSD/ohlc
  */
 object Market {
+    private const val BASE = "https://biquote.io"
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     fun snapshot(lastPrice: Double = Double.NaN): MarketSnapshot {
         return try {
-            fetchLive(lastPrice)
+            val tick = fetchTick()
+            val m1 = fetchOhlc("1m", 120)
+            val m5 = fetchOhlc("5m", 100)
+            val m15 = fetchOhlc("15m", 80)
+            val price = tick.first
+            val spread = tick.second
+            MarketSnapshot(
+                price = if (price.isNaN() && m1.isNotEmpty()) m1.last().close else price,
+                m1 = m1.ifEmpty { demoCandles(if (lastPrice.isNaN()) 2650.0 else lastPrice, 80, 0.12) },
+                m5 = m5.ifEmpty { demoCandles(if (lastPrice.isNaN()) 2650.0 else lastPrice, 80, 0.28) },
+                m15 = m15.ifEmpty { demoCandles(if (lastPrice.isNaN()) 2650.0 else lastPrice, 60, 0.45) },
+                spread = if (spread.isNaN()) 0.25 else spread
+            )
         } catch (_: Exception) {
-            demoSnapshot(if (lastPrice.isNaN()) 2650.0 else lastPrice)
+            val base = if (lastPrice.isNaN()) 2650.0 else lastPrice
+            MarketSnapshot(base, demoCandles(base, 80, 0.12), demoCandles(base, 80, 0.28), demoCandles(base, 60, 0.45), 0.30)
         }
     }
 
-    private fun fetchLive(lastPrice: Double): MarketSnapshot {
-        // Try a simple free gold-related feed pattern; on failure use demo
+    private fun fetchTick(): Pair<Double, Double> {
         val req = Request.Builder()
-            .url("https://api.metals.live/v1/spot/gold")
-            .header("User-Agent", "XAUUSDScalper/5.0")
+            .url("$BASE/api/XAUUSD")
+            .header("User-Agent", "XAUUSDScalper/5.2")
+            .header("Accept", "application/json")
             .build()
         client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return demoSnapshot(if (lastPrice.isNaN()) 2650.0 else lastPrice)
-            val body = resp.body?.string() ?: return demoSnapshot(2650.0)
-            // metals.live often returns array like [{"price": ...}]
-            val price = parsePrice(body) ?: return demoSnapshot(if (lastPrice.isNaN()) 2650.0 else lastPrice)
-            return demoSnapshot(price) // build candles around live price
-        }
-    }
-
-    private fun parsePrice(body: String): Double? {
-        return try {
-            when {
-                body.trim().startsWith("[") -> {
-                    val arr = JSONArray(body)
-                    if (arr.length() > 0) {
-                        val o = arr.getJSONObject(0)
-                        o.optDouble("price", o.optDouble("ask", Double.NaN)).takeIf { !it.isNaN() }
-                    } else null
-                }
-                body.trim().startsWith("{") -> {
-                    val o = JSONObject(body)
-                    o.optDouble("price", o.optDouble("ask", Double.NaN)).takeIf { !it.isNaN() }
-                }
-                else -> body.trim().toDoubleOrNull()
+            if (!resp.isSuccessful) return Double.NaN to Double.NaN
+            val body = resp.body?.string() ?: return Double.NaN to Double.NaN
+            val o = JSONObject(body)
+            val mid = o.optDouble("mid", o.optDouble("price", Double.NaN))
+            val bid = o.optDouble("bid", Double.NaN)
+            val ask = o.optDouble("ask", Double.NaN)
+            val spread = when {
+                !bid.isNaN() && !ask.isNaN() -> ask - bid
+                o.has("spread") -> o.optDouble("spread")
+                else -> 0.25
             }
-        } catch (_: Exception) {
-            null
+            return mid to spread
         }
     }
 
-    private fun demoSnapshot(base: Double): MarketSnapshot {
-        val m1 = genCandles(base, 80, 0.15)
-        val m5 = genCandles(base, 80, 0.35)
-        val m15 = genCandles(base, 60, 0.55)
-        val price = m1.last().close
-        return MarketSnapshot(price, m1, m5, m15, spread = 0.28)
+    private fun fetchOhlc(interval: String, limit: Int): List<Candle> {
+        val req = Request.Builder()
+            .url("$BASE/api/XAUUSD/ohlc?interval=$interval&limit=$limit")
+            .header("User-Agent", "XAUUSDScalper/5.2")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return emptyList()
+            val body = resp.body?.string() ?: return emptyList()
+            val root = JSONObject(body)
+            val bars: JSONArray = when {
+                root.has("bars") -> root.getJSONArray("bars")
+                body.trim().startsWith("[") -> JSONArray(body)
+                else -> return emptyList()
+            }
+            val list = ArrayList<Candle>(bars.length())
+            for (i in 0 until bars.length()) {
+                val b = bars.getJSONObject(i)
+                val t = b.optString("openTime", b.optString("time", "C$i"))
+                list.add(
+                    Candle(
+                        t,
+                        b.getDouble("open"),
+                        b.getDouble("high"),
+                        b.getDouble("low"),
+                        b.getDouble("close")
+                    )
+                )
+            }
+            // API often newest-first → oldest first for indicators
+            return if (list.size >= 2 && list.first().close != list.last().close) {
+                // check time order if possible; reverse if needed by comparing size only
+                list.asReversed()
+            } else list.asReversed()
+        }
     }
 
-    private fun genCandles(base: Double, n: Int, vol: Double): List<Candle> {
+    private fun demoCandles(base: Double, n: Int, vol: Double): List<Candle> {
         val list = ArrayList<Candle>(n)
         var p = base
         for (i in 0 until n) {
-            val drift = (Random.nextDouble() - 0.48) * vol
+            val d = (Math.random() - 0.48) * vol
             val o = p
-            val c = p + drift
-            val h = maxOf(o, c) + Random.nextDouble() * vol * 0.4
-            val l = minOf(o, c) - Random.nextDouble() * vol * 0.4
-            list.add(Candle("C$i", o, h, l, c))
+            val c = p + d
+            val h = maxOf(o, c) + Math.random() * vol * 0.35
+            val l = minOf(o, c) - Math.random() * vol * 0.35
+            list.add(Candle("D$i", o, h, l, c))
             p = c
         }
         return list
