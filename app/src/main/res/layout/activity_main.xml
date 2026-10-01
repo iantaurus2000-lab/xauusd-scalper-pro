@@ -3,29 +3,45 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0A0E14"
-    android:padding="10dp">
+    android:background="#05080C"
+    android:padding="12dp">
 
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
-        <TextView
+
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="XAUUSD PRO SCALPER"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="XAUUSD PRO SCALPER"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="15sp" />
+            <TextView
+                android:id="@+id/connection"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="● LIVE 1s"
+                android:textColor="#00E676"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnMenu"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:text="≡"
+            android:textSize="20sp"
             android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:textSize="14sp" />
-        <TextView
-            android:id="@+id/connection"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="IDLE"
-            android:textColor="#4CAF50"
-            android:textSize="11sp" />
+            android:background="#1A2332" />
     </LinearLayout>
 
     <TextView
@@ -43,46 +59,65 @@
         android:layout_marginTop="4dp"
         android:text="Session..." />
 
-    <TextView
-        android:id="@+id/price"
+    <!-- Price -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="----.--"
-        android:textColor="#FFFFFF"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:layout_marginTop="4dp" />
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:layout_marginTop="6dp">
+        <TextView
+            android:id="@+id/price"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="----.--"
+            android:textColor="#FFFFFF"
+            android:textSize="36sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/priceChange"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="+0.00"
+            android:textColor="#00E676"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/spreadLine"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Spread --"
-        android:textColor="#90A4AE"
+        android:textColor="#78909C"
         android:textSize="12sp" />
 
+    <!-- Signal card -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#121820"
-        android:padding="12dp"
-        android:layout_marginTop="8dp"
+        android:background="#0F1620"
+        android:padding="14dp"
+        android:layout_marginTop="10dp"
         android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/lamp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:gravity="center"
             android:text="⚪"
-            android:textSize="40sp"
-            android:layout_marginEnd="12dp" />
+            android:textSize="36sp"
+            android:background="#1A2332" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:layout_marginStart="12dp">
             <TextView
                 android:id="@+id/signalState"
                 android:layout_width="match_parent"
@@ -95,40 +130,45 @@
                 android:id="@+id/confidence"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Score 0%  ★☆☆☆☆"
-                android:textColor="#FFC107"
-                android:textSize="12sp" />
+                android:text="SIGNAL STRENGTH  ★☆☆☆☆"
+                android:textColor="#00E676"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Entry boxes -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp">
-        <TextView android:id="@+id/boxEntry" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="Entry\n--" android:textColor="#ECEFF1" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" />
-        <TextView android:id="@+id/boxSl" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="SL\n--" android:textColor="#EF5350" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
-        <TextView android:id="@+id/boxTp1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP1\n--" android:textColor="#66BB6A" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
-        <TextView android:id="@+id/boxTp2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP2\n--" android:textColor="#66BB6A" android:textSize="11sp" android:background="#1A2332" android:padding="6dp" android:layout_marginStart="4dp" />
+        android:layout_marginTop="8dp"
+        android:background="#0F1620"
+        android:padding="8dp">
+        <TextView android:id="@+id/boxEntry" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="Entry\n--" android:textColor="#FFFFFF" android:textSize="12sp" />
+        <TextView android:id="@+id/boxSl" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="SL\n--" android:textColor="#EF5350" android:textSize="12sp" />
+        <TextView android:id="@+id/boxTp1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP1\n--" android:textColor="#66BB6A" android:textSize="12sp" />
+        <TextView android:id="@+id/boxTp2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:text="TP2\n--" android:textColor="#66BB6A" android:textSize="12sp" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/signalDetail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#78909C"
+        android:textColor="#607D8B"
         android:textSize="11sp"
         android:layout_marginTop="4dp"
-        android:text="Confluence checks..." />
+        android:text="Confluence ≥78% required" />
 
+    <!-- TF -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp">
-        <Button android:id="@+id/tfM1" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M1" android:textSize="11sp" />
-        <Button android:id="@+id/tfM5" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M5" android:textSize="11sp" />
-        <Button android:id="@+id/tfM15" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M15" android:textSize="11sp" />
+        android:layout_marginTop="8dp">
+        <Button android:id="@+id/tfM1" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M1" android:textSize="12sp" />
+        <Button android:id="@+id/tfM5" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M5" android:textSize="12sp" android:layout_marginStart="4dp" />
+        <Button android:id="@+id/tfM15" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="M15" android:textSize="12sp" android:layout_marginStart="4dp" />
     </LinearLayout>
 
     <com.xauusd.scalper.CandleChartView
@@ -136,34 +176,47 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="6dp" />
+        android:layout_marginTop="8dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginTop="4dp">
-        <TextView android:id="@+id/m5Bias" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="M5 -" android:textColor="#80CBC4" android:textSize="11sp" />
-        <TextView android:id="@+id/m1State" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="M1 -" android:textColor="#80CBC4" android:textSize="11sp" />
+        <TextView android:id="@+id/m5Bias" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="● M5 -" android:textColor="#80CBC4" android:textSize="11sp" />
+        <TextView android:id="@+id/m1State" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="● M1 -" android:textColor="#80CBC4" android:textSize="11sp" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp">
-        <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="START" />
-        <Button android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="SCAN" />
-        <Button android:id="@+id/btnResults" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="WINRATE" />
-        <Button android:id="@+id/btnFund" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="NEWS" />
+        android:layout_marginTop="8dp">
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:text="▶ START"
+            android:textColor="#FFFFFF"
+            android:background="#1B5E20" />
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:text="■ STOP"
+            android:textColor="#FFFFFF"
+            android:background="#B71C1C"
+            android:layout_marginStart="8dp" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/log"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#546E7A"
+        android:textColor="#455A64"
         android:textSize="10sp"
         android:layout_marginTop="4dp"
-        android:text="Log: biquote ready" />
+        android:text="Log: biquote 1s" />
 </LinearLayout>
