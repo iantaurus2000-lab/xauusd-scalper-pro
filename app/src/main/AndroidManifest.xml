@@ -13,7 +13,7 @@
     <application
         android:allowBackup="true"
         android:icon="@android:drawable/ic_menu_compass"
-        android:label="XAUUSD Scalper Pro"
+        android:label="XAUUSD Scalper v5"
         android:supportsRtl="true"
         android:theme="@style/Theme.XAUUSDScalper"
         android:usesCleartextTraffic="true">

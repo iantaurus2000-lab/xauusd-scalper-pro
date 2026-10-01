@@ -8,11 +8,12 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.xauusd.scalper"
+        // Package baru = install fresh, bukan update app lama (hindari signature conflict)
+        applicationId = "com.xauusd.scalper.v5"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "5.0.0"
+        versionCode = 51
+        versionName = "5.1.0"
     }
 
     buildTypes {
@@ -25,6 +26,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            applicationIdSuffix = ""
         }
     }
 
