@@ -2,6 +2,7 @@ package com.xauusd.scalper
 
 import android.app.*
 import android.content.Intent
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -10,10 +11,6 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 
-/**
- * Background monitor.
- * Notif SUARA hanya saat ENTRY READY (bukan setiap LIMIT zone).
- */
 class SignalService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lastReadyKey = ""
@@ -21,33 +18,38 @@ class SignalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "TEST_NOTIF") {
+            entryNotif("TEST", "Tes dering & getar")
+            if (AppPrefs.vibeOn(this)) vibrate()
+            return START_STICKY
+        }
         startForeground(1, statusNotif("Monitoring..."))
         scope.launch {
             while (isActive) {
+                val delayMs = AppPrefs.scanSec(applicationContext) * 1000L
                 try {
                     val snap = Market.snapshot()
-                    val (sig, st) = SignalEngine.evaluate(snap)
-                    // Hanya notif keras saat ENTRY READY
-                    if (sig != null && sig.state.contains("READY") && sig.confidence >= 4) {
+                    val minSc = AppPrefs.minScore(applicationContext)
+                    val (sig, st) = SignalEngine.evaluate(snap, minSc)
+                    if (sig != null && sig.state.contains("READY") && sig.confidence >= 3) {
                         val key = "${sig.side}-${"%.2f".format(sig.entry)}-${sig.candleTime}"
                         if (key != lastReadyKey) {
                             lastReadyKey = key
-                            val msg = "${sig.entryType} @ ${"%.2f".format(sig.entry)}"
-                            entryNotif(sig.side, msg)
-                            vibrate()
+                            entryNotif(sig.side, "${sig.entryType} @ ${"%.2f".format(sig.entry)}")
+                            if (AppPrefs.vibeOn(applicationContext)) vibrate()
                             TelegramHelper.sendSignal(applicationContext, sig, snap.price)
                         }
                     }
                     val text = when {
                         sig != null && sig.state.contains("READY") -> "${sig.entryType} READY"
                         sig != null -> "${sig.entryType} (layar)"
-                        else -> st["watch"] ?: SessionHelper.currentSession()
+                        else -> st["watch"] ?: "WAIT"
                     }
                     startForeground(1, statusNotif(text))
                 } catch (e: Exception) {
                     startForeground(1, statusNotif("Err: ${e.message}"))
                 }
-                delay(30_000)
+                delay(delayMs)
             }
         }
         return START_STICKY
@@ -75,32 +77,35 @@ class SignalService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(ch, "Entry Ready", NotificationManager.IMPORTANCE_HIGH).apply {
                     enableVibration(true)
+                    enableLights(true)
                 }
             )
         }
-        nm.notify(
-            2,
-            NotificationCompat.Builder(this, ch)
-                .setContentTitle("$side ENTRY READY")
-                .setContentText(detail)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setOnlyAlertOnce(true)
-                .setAutoCancel(true)
-                .build()
-        )
+        val b = NotificationCompat.Builder(this, ch)
+            .setContentTitle("$side ENTRY READY")
+            .setContentText(detail)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+        if (AppPrefs.soundOn(this)) {
+            b.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+        } else {
+            b.setSilent(true)
+        }
+        nm.notify(2, b.build())
     }
 
     private fun vibrate() {
         try {
             if (Build.VERSION.SDK_INT >= 31) {
                 getSystemService(VibratorManager::class.java).defaultVibrator
-                    .vibrate(VibrationEffect.createWaveform(longArrayOf(0, 350, 150, 350), -1))
+                    .vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 150, 400), -1))
             } else {
                 @Suppress("DEPRECATION")
                 (getSystemService(VIBRATOR_SERVICE) as Vibrator).let {
                     if (Build.VERSION.SDK_INT >= 26)
-                        it.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 350, 150, 350), -1))
+                        it.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 150, 400), -1))
                 }
             }
         } catch (_: Exception) {}
