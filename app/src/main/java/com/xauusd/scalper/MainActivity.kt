@@ -113,37 +113,46 @@ class MainActivity : Activity() {
     }
 
     private fun markResult(result: String) {
-        val sig = lastSignal
-        if (sig == null) {
-            Toast.makeText(this, "Tidak ada sinyal aktif", Toast.LENGTH_SHORT).show()
+        val sig = lastSignal ?: run {
+            Toast.makeText(this, "Tidak ada sinyal", Toast.LENGTH_SHORT).show()
             return
         }
         val time = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date())
-        ResultsTracker.add(
-            this,
-            TradeResult(sig.side, sig.entry, sig.sl, sig.tp1, result, time)
-        )
+        ResultsTracker.add(this, TradeResult(sig.side, sig.entry, sig.sl, sig.tp1, result, time))
         refreshResultsBar()
-        Toast.makeText(this, "Dicatat: $result", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Dicatat $result", Toast.LENGTH_SHORT).show()
     }
 
     private fun refreshResultsBar() {
-        resultsBar.text = ResultsTracker.stats(this).lines().take(4).joinToString(" • ")
+        resultsBar.text = ResultsTracker.stats(this).lines().take(3).joinToString(" • ")
             .ifBlank { "ENTRY RESULT • Win 0 • Loss 0 • WR 0%" }
     }
 
     private fun showMenu() {
+        val sound = if (AppPrefs.soundOn(this)) "ON" else "OFF"
+        val vibe = if (AppPrefs.vibeOn(this)) "ON" else "OFF"
+        val ema = if (AppPrefs.showEma(this)) "ON" else "OFF"
+        val sr = if (AppPrefs.showSr(this)) "ON" else "OFF"
+        val fib = if (AppPrefs.showFib(this)) "ON" else "OFF"
         val items = arrayOf(
-            "Scan sinyal",
-            "Hasil entry (Winrate)",
-            "Telegram",
-            "Risk management",
-            "Strategy pipeline",
-            "Stop",
-            "Keluar"
+            "🔄 Scan sinyal sekarang",
+            "📊 Hasil entry (Winrate)",
+            "📈 EMA chart: $ema",
+            "📏 Support/Resistance: $sr",
+            "📐 Fibonacci: $fib",
+            "🎯 Min score sinyal: ${AppPrefs.minScore(this)}%",
+            "⏱ Interval scan: ${AppPrefs.scanSec(this)}s",
+            "🔔 Suara notif: $sound",
+            "📳 Getar: $vibe",
+            "▶️ TES notif dering+getar",
+            "📱 Telegram",
+            "💰 Risk management",
+            "ℹ️ Strategy",
+            "■ Stop monitor",
+            "✕ Keluar"
         )
         AlertDialog.Builder(this)
-            .setTitle("MENU")
+            .setTitle("KONTROL")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> fullScan()
@@ -152,17 +161,48 @@ class MainActivity : Activity() {
                         .setPositiveButton("OK", null)
                         .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
                         .show()
-                    2 -> showTelegram()
-                    3 -> showRisk()
-                    4 -> AlertDialog.Builder(this).setTitle("Strategy")
-                        .setMessage("M5 Bias → Liquidity Sweep → Wick Rejection → Wick-Tip Entry → BOS → Confidence ≥78% → Signal\n\nLIMIT ditampilkan di layar (COPY).\nNotif suara hanya saat ENTRY READY.")
+                    2 -> { AppPrefs.setEma(this, !AppPrefs.showEma(this)); renderChart(); Toast.makeText(this, "EMA diubah", Toast.LENGTH_SHORT).show() }
+                    3 -> { AppPrefs.setSr(this, !AppPrefs.showSr(this)); renderChart(); Toast.makeText(this, "S/R diubah", Toast.LENGTH_SHORT).show() }
+                    4 -> { AppPrefs.setFib(this, !AppPrefs.showFib(this)); renderChart(); Toast.makeText(this, "Fib diubah", Toast.LENGTH_SHORT).show() }
+                    5 -> pickMinScore()
+                    6 -> pickScanSec()
+                    7 -> { AppPrefs.setSound(this, !AppPrefs.soundOn(this)); Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show() }
+                    8 -> { AppPrefs.setVibe(this, !AppPrefs.vibeOn(this)); Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show() }
+                    9 -> testNotif()
+                    10 -> showTelegram()
+                    11 -> showRisk()
+                    12 -> AlertDialog.Builder(this).setTitle("Strategy")
+                        .setMessage("M5 Bias → Sweep → Wick → Tip → BOS → Score\nMin score default 72% (bisa diubah di menu)\nENTRY READY lebih sering di sesi aktif\nNotif suara hanya READY")
                         .setPositiveButton("OK", null).show()
-                    5 -> stopAll()
-                    6 -> exitApp()
+                    13 -> stopAll()
+                    14 -> exitApp()
                 }
             }
             .setNegativeButton("Tutup", null)
             .show()
+    }
+
+    private fun pickMinScore() {
+        val opts = arrayOf("65% (sering)", "72% (default)", "78% (ketat)", "85% (sangat ketat)")
+        AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
+            AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
+            Toast.makeText(this, "Min score ${AppPrefs.minScore(this)}%", Toast.LENGTH_SHORT).show()
+            fullScan()
+        }.show()
+    }
+
+    private fun pickScanSec() {
+        val opts = arrayOf("12 detik", "18 detik", "30 detik", "45 detik")
+        AlertDialog.Builder(this).setTitle("Interval scan background").setItems(opts) { _, i ->
+            AppPrefs.setScanSec(this, listOf(12, 18, 30, 45)[i])
+            Toast.makeText(this, "Scan ${AppPrefs.scanSec(this)}s — restart START", Toast.LENGTH_SHORT).show()
+        }.show()
+    }
+
+    private fun testNotif() {
+        val i = Intent(this, SignalService::class.java).apply { action = "TEST_NOTIF" }
+        startForegroundService(i)
+        Toast.makeText(this, "Tes notif dikirim", Toast.LENGTH_SHORT).show()
     }
 
     private fun showTelegram() {
@@ -197,12 +237,8 @@ class MainActivity : Activity() {
         box.addView(bal); box.addView(risk)
         AlertDialog.Builder(this).setTitle("Risk").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
-                RiskHelper.save(
-                    this,
-                    bal.text.toString().toDoubleOrNull() ?: 1000.0,
-                    risk.text.toString().toDoubleOrNull() ?: 1.0,
-                    3.0, 1
-                )
+                RiskHelper.save(this, bal.text.toString().toDoubleOrNull() ?: 1000.0,
+                    risk.text.toString().toDoubleOrNull() ?: 1.0, 3.0, 1)
             }.setNegativeButton("Tutup", null).show()
     }
 
@@ -210,7 +246,7 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE 1s"
         connection.setTextColor(Color.rgb(0, 230, 118))
-        log.text = "Log: START (notif hanya ENTRY READY)"
+        log.text = "Log: START • scan ${AppPrefs.scanSec(this)}s • min ${AppPrefs.minScore(this)}%"
         fullScan()
     }
 
@@ -243,18 +279,13 @@ class MainActivity : Activity() {
                     priceChange.text = (if (ch >= 0) "+" else "") + "%.2f".format(ch)
                     priceChange.setTextColor(if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80))
                     spreadLine.text = "Spread %.2f".format(t.spread)
-                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}  B ${"%.2f".format(t.bid)} A ${"%.2f".format(t.ask)}"
+                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     connection.text = "LIVE 1s"
                     connection.setTextColor(Color.rgb(0, 230, 118))
-                    // Update candle terakhir di TF aktif
                     fun bump(list: List<Candle>): List<Candle> {
                         if (list.isEmpty()) return list
                         val last = list.last()
-                        return list.dropLast(1) + last.copy(
-                            close = t.mid,
-                            high = maxOf(last.high, t.mid),
-                            low = minOf(last.low, t.mid)
-                        )
+                        return list.dropLast(1) + last.copy(close = t.mid, high = maxOf(last.high, t.mid), low = minOf(last.low, t.mid))
                     }
                     m1 = bump(m1); m5 = bump(m5); m15 = bump(m15)
                     renderChart()
@@ -273,7 +304,7 @@ class MainActivity : Activity() {
         scanJob = scope.launch(Dispatchers.IO) {
             try {
                 val s = Market.snapshot(lastPrice)
-                val (sig, st) = SignalEngine.evaluate(s)
+                val (sig, st) = SignalEngine.evaluate(s, AppPrefs.minScore(this@MainActivity))
                 withContext(Dispatchers.Main) {
                     m1 = s.m1; m5 = s.m5; m15 = s.m15
                     lastPrice = s.price
@@ -288,7 +319,7 @@ class MainActivity : Activity() {
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: OK score ${st["score"]}% • ${st["steps"]}"
+                    log.text = "Log: score ${st["score"]}% • ${st["steps"]}"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { log.text = "Log: ${e.message}" }
@@ -307,7 +338,7 @@ class MainActivity : Activity() {
         m5Bias.text = "M5 ${st["bias"] ?: "-"}"
         m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
         confidence.text = "${stars(starN.coerceIn(0, 5))}  $score%"
-        signalDetail.text = st["steps"] ?: "M5Bias → Sweep → Wick → Tip → BOS"
+        signalDetail.text = st["steps"] ?: "M5 → Sweep → Wick → Tip → BOS"
 
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
@@ -334,7 +365,7 @@ class MainActivity : Activity() {
             "M15" -> m15
             else -> m1
         }
-        chart.setLayers(true, true, true)
+        chart.setLayers(AppPrefs.showEma(this), AppPrefs.showSr(this), AppPrefs.showFib(this))
         chart.setData(
             data, timeframe,
             if (lastPrice.isNaN()) null else lastPrice,
