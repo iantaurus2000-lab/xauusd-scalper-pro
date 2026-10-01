@@ -3,6 +3,8 @@ package com.xauusd.scalper
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -12,7 +14,11 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import kotlinx.coroutines.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var price: TextView
@@ -28,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var log: TextView
     private lateinit var spreadLine: TextView
     private lateinit var highLow: TextView
+    private lateinit var resultsBar: TextView
     private lateinit var boxEntry: TextView
     private lateinit var boxSl: TextView
     private lateinit var boxTp1: TextView
@@ -37,7 +44,6 @@ class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tickJob: Job? = null
     private var scanJob: Job? = null
-    private var running = false
     private var timeframe = "M1"
     private var m1: List<Candle> = emptyList()
     private var m5: List<Candle> = emptyList()
@@ -48,7 +54,6 @@ class MainActivity : Activity() {
     private var sessionHigh = Double.NaN
     private var sessionLow = Double.NaN
     private var lastSignal: SignalResult? = null
-    private val activityLog = StringBuilder()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -66,6 +71,7 @@ class MainActivity : Activity() {
         log = findViewById(R.id.log)
         spreadLine = findViewById(R.id.spreadLine)
         highLow = findViewById(R.id.highLow)
+        resultsBar = findViewById(R.id.resultsBar)
         boxEntry = findViewById(R.id.boxEntry)
         boxSl = findViewById(R.id.boxSl)
         boxTp1 = findViewById(R.id.boxTp1)
@@ -83,205 +89,136 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopAll() }
         findViewById<Button>(R.id.btnMenu).setOnClickListener { showMenu() }
 
+        findViewById<Button>(R.id.btnCopyEntry).setOnClickListener { copyPrice(lastSignal?.entry, "Entry") }
+        findViewById<Button>(R.id.btnCopySl).setOnClickListener { copyPrice(lastSignal?.sl, "SL") }
+        findViewById<Button>(R.id.btnCopyTp).setOnClickListener { copyPrice(lastSignal?.tp1, "TP1") }
+        findViewById<Button>(R.id.btnMarkWin).setOnClickListener { markResult("WIN") }
+        findViewById<Button>(R.id.btnMarkLoss).setOnClickListener { markResult("LOSS") }
+
         ticker.isSelected = true
+        refreshResultsBar()
         startPriceLoop()
         fullScan()
-        addLog("App start v5.5")
     }
 
-    private fun addLog(msg: String) {
-        activityLog.insert(0, "$msg\n")
-        if (activityLog.length > 3000) activityLog.setLength(3000)
-        log.text = "Log: $msg"
+    private fun copyPrice(v: Double?, label: String) {
+        if (v == null) {
+            Toast.makeText(this, "Belum ada $label", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val text = "%.2f".format(v)
+        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+            .setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(this, "$label $text disalin", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun markResult(result: String) {
+        val sig = lastSignal
+        if (sig == null) {
+            Toast.makeText(this, "Tidak ada sinyal aktif", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val time = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date())
+        ResultsTracker.add(
+            this,
+            TradeResult(sig.side, sig.entry, sig.sl, sig.tp1, result, time)
+        )
+        refreshResultsBar()
+        Toast.makeText(this, "Dicatat: $result", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun refreshResultsBar() {
+        resultsBar.text = ResultsTracker.stats(this).lines().take(4).joinToString(" • ")
+            .ifBlank { "ENTRY RESULT • Win 0 • Loss 0 • WR 0%" }
     }
 
     private fun showMenu() {
         val items = arrayOf(
-            // MARKET
-            "📊 MARKET / QUOTES",
-            "📈 CHART & INDICATORS",
-            "🎯 SIGNAL CENTER",
-            // CONFIG
-            "⚙️ SETTINGS",
-            "📱 TELEGRAM",
-            "🔑 BIQUOTE MARKET DATA",
-            "🧠 STRATEGY",
-            "💰 RISK MANAGEMENT",
-            // TOOLS
-            "📋 SIGNAL HISTORY",
-            "📜 LOG",
-            "🔔 NOTIFICATION & ALARM",
-            "■ STOP MONITOR",
-            "✕ KELUAR APLIKASI"
+            "Scan sinyal",
+            "Hasil entry (Winrate)",
+            "Telegram",
+            "Risk management",
+            "Strategy pipeline",
+            "Stop",
+            "Keluar"
         )
         AlertDialog.Builder(this)
             .setTitle("MENU")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> showQuotes()
-                    1 -> showChartHelp()
-                    2 -> fullScan()
-                    3 -> showSettings()
-                    4 -> showTelegramDialog()
-                    5 -> showBiquoteInfo()
-                    6 -> showStrategy()
-                    7 -> showRisk()
-                    8 -> AlertDialog.Builder(this).setTitle("History")
-                        .setMessage(ResultsTracker.stats(this)).setPositiveButton("OK", null).show()
-                    9 -> AlertDialog.Builder(this).setTitle("LOG")
-                        .setMessage(if (activityLog.isEmpty()) "Kosong" else activityLog.toString())
+                    0 -> fullScan()
+                    1 -> AlertDialog.Builder(this).setTitle("Hasil Entry")
+                        .setMessage(ResultsTracker.stats(this))
+                        .setPositiveButton("OK", null)
+                        .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
+                        .show()
+                    2 -> showTelegram()
+                    3 -> showRisk()
+                    4 -> AlertDialog.Builder(this).setTitle("Strategy")
+                        .setMessage("M5 Bias → Liquidity Sweep → Wick Rejection → Wick-Tip Entry → BOS → Confidence ≥78% → Signal\n\nLIMIT ditampilkan di layar (COPY).\nNotif suara hanya saat ENTRY READY.")
                         .setPositiveButton("OK", null).show()
-                    10 -> AlertDialog.Builder(this).setTitle("Notification")
-                        .setMessage("Notifikasi entry: 1x per setup\nTelegram: jika token tersimpan\nBackground: tekan START")
-                        .setPositiveButton("OK", null).show()
-                    11 -> stopAll()
-                    12 -> exitApp()
+                    5 -> stopAll()
+                    6 -> exitApp()
                 }
             }
-            .setNegativeButton("✕ TUTUP MENU", null)
+            .setNegativeButton("Tutup", null)
             .show()
     }
 
-    private fun showQuotes() {
-        AlertDialog.Builder(this)
-            .setTitle("MARKET / QUOTES")
-            .setMessage(
-                "XAUUSD\n" +
-                    "Mid: ${"%.2f".format(lastPrice)}\n" +
-                    "Bid: ${"%.2f".format(lastBid)}\n" +
-                    "Ask: ${"%.2f".format(lastAsk)}\n" +
-                    "Spread: ${"%.2f".format(if (!lastBid.isNaN() && !lastAsk.isNaN()) lastAsk - lastBid else 0.0)}\n" +
-                    "H: ${"%.2f".format(sessionHigh)}  L: ${"%.2f".format(sessionLow)}\n" +
-                    "Server: Biquote • ${SessionHelper.sessionLabel()}"
-            ).setPositiveButton("OK", null).show()
-    }
-
-    private fun showChartHelp() {
-        AlertDialog.Builder(this)
-            .setTitle("CHART & INDICATORS")
-            .setMessage(
-                "• Geser horizontal = scroll history\n" +
-                    "• Geser vertikal / pinch = zoom\n" +
-                    "• Sentuh chart = crosshair harga\n" +
-                    "• Tap area kanan chart = AUTO scroll ke candle terakhir\n" +
-                    "• EMA20 (kuning) EMA50 (biru)\n" +
-                    "• Garis S/R putus-putus\n" +
-                    "• Badge Bid/Ask/Mid di kanan"
-            ).setPositiveButton("OK", null).show()
-    }
-
-    private fun showSettings() {
-        AlertDialog.Builder(this)
-            .setTitle("SETTINGS")
-            .setMessage("Signal only • No auto broker order\nTF: M1/M5/M15\nMin score: 78%\nPackage: com.xauusd.scalper.v5")
-            .setPositiveButton("OK", null).show()
-    }
-
-    private fun showBiquoteInfo() {
-        AlertDialog.Builder(this)
-            .setTitle("BIQUOTE")
-            .setMessage("Sumber: https://biquote.io\nTick 1s + OHLC M1/M5/M15\nGratis • tanpa API key\nStatus: ${connection.text}")
-            .setPositiveButton("Scan ulang") { _, _ -> fullScan() }
-            .setNegativeButton("Tutup", null).show()
-    }
-
-    private fun showStrategy() {
-        AlertDialog.Builder(this)
-            .setTitle("STRATEGY")
-            .setMessage(
-                "8 confluence checks → skor 0–100\n" +
-                    "Sinyal hanya jika ≥ 78%\n\n" +
-                    "• M5 EMA trend bias\n" +
-                    "• M1 pullback EMA20\n" +
-                    "• Wick / structure\n" +
-                    "• RSI zone\n" +
-                    "• Range vol proxy\n" +
-                    "• Session London/NY\n" +
-                    "• Spread ≤ 0.25\n" +
-                    "• BOS\n\n" +
-                    "Entry: BUY LIMIT / SELL LIMIT"
-            ).setPositiveButton("OK", null).show()
+    private fun showTelegram() {
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
+        val tokenIn = EditText(this).apply {
+            hint = "Bot Token"; setText(TelegramHelper.token(this@MainActivity))
+            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+        }
+        val chatIn = EditText(this).apply {
+            hint = "Chat ID"; setText(TelegramHelper.chatId(this@MainActivity))
+            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+        }
+        box.addView(tokenIn); box.addView(chatIn)
+        AlertDialog.Builder(this).setTitle("Telegram").setView(box)
+            .setPositiveButton("Simpan") { _, _ ->
+                TelegramHelper.save(this, tokenIn.text.toString(), chatIn.text.toString())
+            }.setNegativeButton("Batal", null).show()
     }
 
     private fun showRisk() {
         val pad = (12 * resources.displayMetrics.density).toInt()
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
-        val bal = EditText(this).apply { hint = "Balance USD"; setText(RiskHelper.balance(this@MainActivity).toString()); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY) }
-        val risk = EditText(this).apply { hint = "Risk % per trade"; setText(RiskHelper.riskPct(this@MainActivity).toString()); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY) }
-        val daily = EditText(this).apply { hint = "Max daily loss %"; setText(RiskHelper.dailyLossPct(this@MainActivity).toString()); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY) }
-        val maxp = EditText(this).apply { hint = "Max positions"; setText(RiskHelper.maxPos(this@MainActivity).toString()); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY) }
-        box.addView(bal); box.addView(risk); box.addView(daily); box.addView(maxp)
-        val preview = if (lastSignal != null)
-            RiskHelper.summary(this, lastSignal!!.entry, lastSignal!!.sl, lastSignal!!.tp1)
-        else "Isi balance & risk, lalu ada sinyal untuk hitung lot."
-        AlertDialog.Builder(this)
-            .setTitle("RISK MANAGEMENT")
-            .setMessage(preview)
-            .setView(box)
+        val bal = EditText(this).apply {
+            hint = "Balance"; setText(RiskHelper.balance(this@MainActivity).toString())
+            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+        }
+        val risk = EditText(this).apply {
+            hint = "Risk %"; setText(RiskHelper.riskPct(this@MainActivity).toString())
+            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+        }
+        box.addView(bal); box.addView(risk)
+        AlertDialog.Builder(this).setTitle("Risk").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
                 RiskHelper.save(
                     this,
                     bal.text.toString().toDoubleOrNull() ?: 1000.0,
                     risk.text.toString().toDoubleOrNull() ?: 1.0,
-                    daily.text.toString().toDoubleOrNull() ?: 3.0,
-                    maxp.text.toString().toIntOrNull() ?: 1
+                    3.0, 1
                 )
-                addLog("Risk settings saved")
-            }
-            .setNegativeButton("Tutup", null).show()
-    }
-
-    private fun showTelegramDialog() {
-        val pad = (12 * resources.displayMetrics.density).toInt()
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
-        val tokenIn = EditText(this).apply {
-            hint = "Bot Token @BotFather"
-            setText(TelegramHelper.token(this@MainActivity))
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
-        }
-        val chatIn = EditText(this).apply {
-            hint = "Chat ID"
-            setText(TelegramHelper.chatId(this@MainActivity))
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
-        }
-        box.addView(tokenIn); box.addView(chatIn)
-        AlertDialog.Builder(this)
-            .setTitle("TELEGRAM")
-            .setMessage("Signal otomatis saat entry (1x).\nTP/SL alert manual dari history.")
-            .setView(box)
-            .setPositiveButton("Simpan") { _, _ ->
-                TelegramHelper.save(this, tokenIn.text.toString(), chatIn.text.toString())
-                addLog("Telegram saved")
-            }
-            .setNeutralButton("Test") { _, _ ->
-                TelegramHelper.save(this, tokenIn.text.toString(), chatIn.text.toString())
-                scope.launch(Dispatchers.IO) {
-                    val ok = TelegramHelper.send(
-                        TelegramHelper.token(this@MainActivity),
-                        TelegramHelper.chatId(this@MainActivity),
-                        "Test XAUUSD Scalper v5.5"
-                    )
-                    withContext(Dispatchers.Main) { addLog(if (ok) "Telegram OK" else "Telegram GAGAL") }
-                }
-            }
-            .setNegativeButton("Batal", null).show()
+            }.setNegativeButton("Tutup", null).show()
     }
 
     private fun startAll() {
-        running = true
         startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE 1s"
         connection.setTextColor(Color.rgb(0, 230, 118))
-        addLog("START monitor")
+        log.text = "Log: START (notif hanya ENTRY READY)"
         fullScan()
     }
 
     private fun stopAll() {
-        running = false
         try { stopService(Intent(this, SignalService::class.java)) } catch (_: Exception) {}
         connection.text = "STOPPED"
         connection.setTextColor(Color.rgb(255, 152, 0))
-        addLog("STOP")
+        log.text = "Log: STOP"
     }
 
     private fun exitApp() {
@@ -298,9 +235,7 @@ class MainActivity : Activity() {
                 try {
                     val t = withContext(Dispatchers.IO) { Market.tick() }
                     val prev = lastPrice
-                    lastPrice = t.mid
-                    lastBid = t.bid
-                    lastAsk = t.ask
+                    lastPrice = t.mid; lastBid = t.bid; lastAsk = t.ask
                     if (sessionHigh.isNaN() || t.mid > sessionHigh) sessionHigh = t.mid
                     if (sessionLow.isNaN() || t.mid < sessionLow) sessionLow = t.mid
                     price.text = "%.2f".format(t.mid)
@@ -308,22 +243,25 @@ class MainActivity : Activity() {
                     priceChange.text = (if (ch >= 0) "+" else "") + "%.2f".format(ch)
                     priceChange.setTextColor(if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80))
                     spreadLine.text = "Spread %.2f".format(t.spread)
-                    highLow.text = "H ${"%.2f".format(sessionHigh)}   L ${"%.2f".format(sessionLow)}  •  B ${"%.2f".format(t.bid)} A ${"%.2f".format(t.ask)}"
+                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}  B ${"%.2f".format(t.bid)} A ${"%.2f".format(t.ask)}"
                     connection.text = "LIVE 1s"
                     connection.setTextColor(Color.rgb(0, 230, 118))
-                    if (m1.isNotEmpty()) {
-                        val last = m1.last()
-                        m1 = m1.dropLast(1) + last.copy(
+                    // Update candle terakhir di TF aktif
+                    fun bump(list: List<Candle>): List<Candle> {
+                        if (list.isEmpty()) return list
+                        val last = list.last()
+                        return list.dropLast(1) + last.copy(
                             close = t.mid,
                             high = maxOf(last.high, t.mid),
                             low = minOf(last.low, t.mid)
                         )
-                        renderChart()
                     }
+                    m1 = bump(m1); m5 = bump(m5); m15 = bump(m15)
+                    renderChart()
                 } catch (e: Exception) {
                     connection.text = "OFFLINE"
                     connection.setTextColor(Color.rgb(255, 90, 90))
-                    addLog("tick ${e.message}")
+                    log.text = "Log: ${e.message}"
                 }
                 delay(1000)
             }
@@ -344,16 +282,16 @@ class MainActivity : Activity() {
                         sessionLow = s.m1.minOf { it.low }
                     }
                     price.text = "%.2f".format(s.price)
-                    highLow.text = "H ${"%.2f".format(sessionHigh)}   L ${"%.2f".format(sessionLow)}"
+                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     spreadLine.text = "Spread %.2f".format(s.spread)
-                    ticker.text = SessionHelper.tickerText() + FundamentalTips.tickerExtra()
+                    ticker.text = SessionHelper.tickerText()
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    addLog("BIQUOTE OK score ${st["score"]}%")
+                    log.text = "Log: OK score ${st["score"]}% • ${st["steps"]}"
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { addLog("${e.message}") }
+                withContext(Dispatchers.Main) { log.text = "Log: ${e.message}" }
             }
         }
     }
@@ -369,6 +307,7 @@ class MainActivity : Activity() {
         m5Bias.text = "M5 ${st["bias"] ?: "-"}"
         m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
         confidence.text = "${stars(starN.coerceIn(0, 5))}  $score%"
+        signalDetail.text = st["steps"] ?: "M5Bias → Sweep → Wick → Tip → BOS"
 
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
@@ -378,13 +317,10 @@ class MainActivity : Activity() {
                 else -> "⚪"
             }
             signalState.text = w
-            signalDetail.text = "Wick/Sweep/BOS • RSI ${st["rsi"]} • Spread ${st["spread"]}"
             boxEntry.text = "Entry\n--"; boxSl.text = "SL\n--"; boxTp1.text = "TP1\n--"; boxTp2.text = "TP2\n--"
         } else {
             lamp.text = if (sig.side == "BUY") "🟢" else "🔴"
-            signalState.text = "${sig.entryType} ${sig.state}"
-            val lot = RiskHelper.autoLot(this, sig.entry, sig.sl)
-            signalDetail.text = "${sig.reason} • Lot ~${"%.2f".format(lot)}"
+            signalState.text = "${sig.entryType}\n${sig.state}"
             boxEntry.text = "Entry\n${"%.2f".format(sig.entry)}"
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
@@ -398,7 +334,7 @@ class MainActivity : Activity() {
             "M15" -> m15
             else -> m1
         }
-        chart.setLayers(true, true)
+        chart.setLayers(true, true, true)
         chart.setData(
             data, timeframe,
             if (lastPrice.isNaN()) null else lastPrice,
