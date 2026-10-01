@@ -4,32 +4,19 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Professional confluence engine — skor 0–100, sinyal hanya jika ≥ 78.
- * BUY rules (dari spesifikasi user):
- * - M5: price > EMA50 && EMA20 > EMA50
- * - M1: pullback ke EMA20 + struktur bullish
- * - RSI 40–65
- * - Range candle > rata-rata 10 (proxy volume CFD)
- * - Session London / NY (WITA)
- * - Spread ≤ 0.25
- * - Di atas support, jauh dari resistance
+ * Pipeline akurat:
+ * M5 Bias → Liquidity Sweep → Wick Rejection → Wick-Tip Entry → BOS → Confidence → Signal
+ * Sinyal hanya jika confidence ≥ 4 (≈80%+).
  */
 object SignalEngine {
 
-    data class Confluence(
-        val score: Int,
-        val stars: Int,
-        val checks: Map<String, Boolean>,
-        val side: String
-    )
-
     fun evaluate(s: MarketSnapshot): Pair<SignalResult?, Map<String, String>> {
-        if (s.m1.size < 40 || s.m5.size < 60) {
+        if (s.m1.size < 30 || s.m5.size < 40) {
             return null to mapOf(
-                "bias" to "WAITING",
-                "watch" to "LOADING",
-                "score" to "0",
-                "session" to SessionHelper.sessionLabel()
+                "bias" to "WAIT", "watch" to "LOADING",
+                "score" to "0", "stars" to "0",
+                "session" to SessionHelper.sessionLabel(),
+                "steps" to "loading"
             )
         }
 
@@ -37,105 +24,143 @@ object SignalEngine {
         val i1 = IndicatorEngine.snapshot(s.m1)
         val c1 = s.m1.last()
         val prev = s.m1[s.m1.lastIndex - 1]
+        val body = abs(c1.close - c1.open).coerceAtLeast(0.01)
+        val upperWick = c1.high - maxOf(c1.open, c1.close)
+        val lowerWick = minOf(c1.open, c1.close) - c1.low
 
-        // --- BUY checks ---
-        val buyTrend = s.m5.last().close > i5.ema50 && i5.ema20 > i5.ema50
-        val buyPullback = abs(c1.low - i1.ema20) <= max(i1.atr14 * 0.45, 0.35) ||
-            (c1.close > i1.ema20 && prev.low <= i1.ema20 * 1.0002)
-        val buyRsi = i1.rsi14 in 40.0..65.0
-        val avgRange = s.m1.takeLast(11).dropLast(1).map { it.high - it.low }.average()
-        val buyVol = (c1.high - c1.low) >= avgRange * 0.95 // proxy volume
+        // 1) M5 Bias
+        val m5Buy = s.m5.last().close > i5.ema50 && i5.ema20 > i5.ema50
+        val m5Sell = s.m5.last().close < i5.ema50 && i5.ema20 < i5.ema50
+
+        // 2) Liquidity Sweep (ambil likuiditas di atas high / bawah low recent)
+        val look = s.m1.takeLast(12).dropLast(1)
+        val recentHigh = look.maxOf { it.high }
+        val recentLow = look.minOf { it.low }
+        val sweepBuy = c1.low < recentLow && c1.close > recentLow // sweep low lalu close balik
+        val sweepSell = c1.high > recentHigh && c1.close < recentHigh
+
+        // 3) Wick Rejection
+        val wickBuy = lowerWick >= body * 1.2 && lowerWick > upperWick
+        val wickSell = upperWick >= body * 1.2 && upperWick > lowerWick
+
+        // 4) Wick-Tip Entry zone (entry di ujung wick / EMA20)
+        val tipBuy = abs(c1.low - i1.ema20) <= max(i1.atr14 * 0.5, 0.40) ||
+            (c1.close > i1.ema20 && prev.low <= i1.ema20)
+        val tipSell = abs(c1.high - i1.ema20) <= max(i1.atr14 * 0.5, 0.40) ||
+            (c1.close < i1.ema20 && prev.high >= i1.ema20)
+
+        // 5) BOS
+        val bosBuy = c1.close > prev.high || c1.close > look.maxOf { it.high }
+        val bosSell = c1.close < prev.low || c1.close < look.minOf { it.low }
+
+        // Filter pendukung
         val sessionOk = SessionHelper.isGoodSession()
-        val buySpread = s.spread <= 0.25
-        val buyStruct = s.price > i1.support && abs(i1.resistance - s.price) > i1.atr14 * 0.6
-        val buyBos = c1.close > prev.high || c1.close > s.m1.takeLast(8).dropLast(1).maxOf { it.high } * 0.999
+        val spreadOk = s.spread <= 0.30
+        val rsiBuy = i1.rsi14 in 35.0..68.0
+        val rsiSell = i1.rsi14 in 32.0..65.0
 
-        val buyFlags = linkedMapOf(
-            "trend_m5" to buyTrend,
-            "pullback_m1" to buyPullback,
-            "rsi" to buyRsi,
-            "range_vol" to buyVol,
-            "session" to sessionOk,
-            "spread" to buySpread,
-            "structure" to buyStruct,
-            "bos" to buyBos
+        fun scoreBuy(): Int {
+            var sc = 0
+            if (m5Buy) sc += 20
+            if (sweepBuy) sc += 18
+            if (wickBuy) sc += 16
+            if (tipBuy) sc += 14
+            if (bosBuy) sc += 12
+            if (sessionOk) sc += 8
+            if (spreadOk) sc += 6
+            if (rsiBuy) sc += 6
+            return sc.coerceIn(0, 100)
+        }
+
+        fun scoreSell(): Int {
+            var sc = 0
+            if (m5Sell) sc += 20
+            if (sweepSell) sc += 18
+            if (wickSell) sc += 16
+            if (tipSell) sc += 14
+            if (bosSell) sc += 12
+            if (sessionOk) sc += 8
+            if (spreadOk) sc += 6
+            if (rsiSell) sc += 6
+            return sc.coerceIn(0, 100)
+        }
+
+        val buySc = scoreBuy()
+        val sellSc = scoreSell()
+
+        val stepsBuy = listOf(
+            "M5Bias" to m5Buy, "Sweep" to sweepBuy, "Wick" to wickBuy,
+            "Tip" to tipBuy, "BOS" to bosBuy
         )
-        val buyHits = buyFlags.values.count { it }
-        val buyScore = (buyHits * 100) / 8
-
-        // --- SELL checks (mirror) ---
-        val sellTrend = s.m5.last().close < i5.ema50 && i5.ema20 < i5.ema50
-        val sellPullback = abs(c1.high - i1.ema20) <= max(i1.atr14 * 0.45, 0.35) ||
-            (c1.close < i1.ema20 && prev.high >= i1.ema20 * 0.9998)
-        val sellRsi = i1.rsi14 in 35.0..60.0
-        val sellVol = buyVol
-        val sellSpread = buySpread
-        val sellStruct = s.price < i1.resistance && abs(s.price - i1.support) > i1.atr14 * 0.6
-        val sellBos = c1.close < prev.low || c1.close < s.m1.takeLast(8).dropLast(1).minOf { it.low } * 1.001
-
-        val sellFlags = linkedMapOf(
-            "trend_m5" to sellTrend,
-            "pullback_m1" to sellPullback,
-            "rsi" to sellRsi,
-            "range_vol" to sellVol,
-            "session" to sessionOk,
-            "spread" to sellSpread,
-            "structure" to sellStruct,
-            "bos" to sellBos
+        val stepsSell = listOf(
+            "M5Bias" to m5Sell, "Sweep" to sweepSell, "Wick" to wickSell,
+            "Tip" to tipSell, "BOS" to bosSell
         )
-        val sellHits = sellFlags.values.count { it }
-        val sellScore = (sellHits * 100) / 8
 
         val side: String
         val score: Int
-        val flags: Map<String, Boolean>
+        val steps: List<Pair<String, Boolean>>
         when {
-            buyScore >= sellScore && buyScore >= 78 -> {
-                side = "BUY"; score = buyScore; flags = buyFlags
+            buySc >= sellSc && buySc >= 78 && m5Buy && (sweepBuy || wickBuy) && (tipBuy || bosBuy) -> {
+                side = "BUY"; score = buySc; steps = stepsBuy
             }
-            sellScore > buyScore && sellScore >= 78 -> {
-                side = "SELL"; score = sellScore; flags = sellFlags
+            sellSc > buySc && sellSc >= 78 && m5Sell && (sweepSell || wickSell) && (tipSell || bosSell) -> {
+                side = "SELL"; score = sellSc; steps = stepsSell
             }
             else -> {
+                val best = max(buySc, sellSc)
                 val watch = when {
                     !sessionOk -> "OFF SESSION"
-                    s.spread > 0.25 -> "SPREAD HIGH"
-                    buyScore >= 50 -> "BUY WATCH ${buyScore}%"
-                    sellScore >= 50 -> "SELL WATCH ${sellScore}%"
+                    !spreadOk -> "SPREAD HIGH"
+                    buySc >= 50 -> "BUY BUILD $buySc%"
+                    sellSc >= 50 -> "SELL BUILD $sellSc%"
                     else -> "WAIT"
                 }
+                val stepStr = (if (buySc >= sellSc) stepsBuy else stepsSell)
+                    .joinToString(" · ") { (n, ok) -> if (ok) n else "$n✗" }
                 return null to mapOf(
                     "bias" to when {
-                        buyTrend -> "BUY"
-                        sellTrend -> "SELL"
+                        m5Buy -> "BUY"
+                        m5Sell -> "SELL"
                         else -> "NEUTRAL"
                     },
                     "watch" to watch,
-                    "score" to max(buyScore, sellScore).toString(),
-                    "stars" to (max(buyScore, sellScore) / 20).coerceIn(0, 5).toString(),
+                    "score" to best.toString(),
+                    "stars" to (best / 20).coerceIn(0, 5).toString(),
                     "session" to SessionHelper.sessionLabel(),
                     "rsi" to "%.1f".format(i1.rsi14),
-                    "spread" to "%.2f".format(s.spread)
+                    "spread" to "%.2f".format(s.spread),
+                    "steps" to stepStr
                 )
             }
         }
 
         val stars = (score / 20).coerceIn(1, 5)
-        val limit = if (side == "BUY") {
-            // limit di area EMA20 / low wick
-            minOf(i1.ema20, c1.low)
-        } else {
-            maxOf(i1.ema20, c1.high)
-        }
-        val risk = max(i1.atr14 * 0.9, 0.50)
-        val sl = if (side == "BUY") limit - risk else limit + risk
-        val tp1 = if (side == "BUY") limit + risk else limit - risk
-        val tp2 = if (side == "BUY") limit + risk * 1.8 else limit - risk * 1.8
-        val near = abs(s.price - limit) <= max(i1.atr14 * 0.4, 0.30)
+        // Wick-tip entry: low/high of rejection candle
+        val entry = if (side == "BUY") minOf(c1.low, i1.ema20) else maxOf(c1.high, i1.ema20)
+        val risk = max(i1.atr14 * 0.85, 0.55)
+        val sl = if (side == "BUY") entry - risk else entry + risk
+        val tp1 = if (side == "BUY") entry + risk * 1.2 else entry - risk * 1.2
+        val tp2 = if (side == "BUY") entry + risk * 2.0 else entry - risk * 2.0
+        val near = abs(s.price - entry) <= max(i1.atr14 * 0.35, 0.35)
         val entryType = if (side == "BUY") "BUY LIMIT" else "SELL LIMIT"
-        val state = if (near) "ENTRY READY" else "LIMIT PENDING"
+        val state = if (near) "ENTRY READY" else "LIMIT ZONE"
 
-        val status = mutableMapOf(
+        val stepStr = steps.joinToString(" · ") { (n, ok) -> if (ok) "✓$n" else n }
+
+        return SignalResult(
+            side = side,
+            state = state,
+            entry = entry,
+            entryType = entryType,
+            sl = sl,
+            tp1 = tp1,
+            tp2 = tp2,
+            confidence = stars,
+            candleTime = c1.time,
+            setup = "Pipeline $score%",
+            reason = stepStr
+        ) to mapOf(
             "bias" to side,
             "watch" to state,
             "score" to score.toString(),
@@ -143,21 +168,7 @@ object SignalEngine {
             "session" to SessionHelper.sessionLabel(),
             "rsi" to "%.1f".format(i1.rsi14),
             "spread" to "%.2f".format(s.spread),
-            "checks" to flags.filter { it.value }.keys.joinToString(",")
+            "steps" to stepStr
         )
-
-        return SignalResult(
-            side = side,
-            state = state,
-            entry = limit,
-            entryType = entryType,
-            sl = sl,
-            tp1 = tp1,
-            tp2 = tp2,
-            confidence = stars,
-            candleTime = c1.time,
-            setup = "Confluence $score% (≥78) → $entryType",
-            reason = "Score $score/100 • ${flags.count { it.value }}/8 checks"
-        ) to status
     }
 }
