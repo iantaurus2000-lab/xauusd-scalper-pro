@@ -1,5 +1,6 @@
 package com.xauusd.scalper
 
+/** Satu candle OHLC */
 data class Candle(
     val time: String,
     val open: Double,
@@ -8,14 +9,18 @@ data class Candle(
     val close: Double
 )
 
+/** Snapshot pasar lengkap untuk chart + sinyal */
 data class MarketSnapshot(
     val price: Double,
+    val bid: Double = Double.NaN,
+    val ask: Double = Double.NaN,
     val m1: List<Candle>,
     val m5: List<Candle>,
     val m15: List<Candle> = emptyList(),
     val spread: Double = 0.30
 )
 
+/** Hasil sinyal entry */
 data class SignalResult(
     val side: String,
     val state: String,
@@ -30,6 +35,7 @@ data class SignalResult(
     val reason: String
 )
 
+/** Indikator terhitung untuk 1 timeframe */
 data class IndicatorSnapshot(
     val ema20: Double,
     val ema50: Double,

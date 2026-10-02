@@ -3,7 +3,11 @@ package com.xauusd.scalper
 import kotlin.math.abs
 import kotlin.math.max
 
+/**
+ * Indikator chart: EMA, RSI, ATR, Support/Resistance, Fibonacci.
+ */
 object IndicatorEngine {
+
     fun ema(values: List<Double>, period: Int): List<Double> {
         if (values.isEmpty()) return emptyList()
         val out = MutableList(values.size) { Double.NaN }
@@ -59,12 +63,17 @@ object IndicatorEngine {
         val resistance = recent.maxOf { it.high }
         val range = (resistance - support).coerceAtLeast(0.5)
         return IndicatorSnapshot(
-            e20, e50, rsi(closes), atr(c), support, resistance,
-            resistance - range * 0.236,
-            resistance - range * 0.382,
-            resistance - range * 0.5,
-            resistance - range * 0.618,
-            resistance - range * 0.786
+            ema20 = e20,
+            ema50 = e50,
+            rsi14 = rsi(closes),
+            atr14 = atr(c),
+            support = support,
+            resistance = resistance,
+            fib236 = resistance - range * 0.236,
+            fib382 = resistance - range * 0.382,
+            fib50 = resistance - range * 0.5,
+            fib618 = resistance - range * 0.618,
+            fib786 = resistance - range * 0.786
         )
     }
 }

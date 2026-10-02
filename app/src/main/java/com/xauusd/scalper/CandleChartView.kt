@@ -9,6 +9,21 @@ import android.view.View
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * Chart candlestick profesional realtime.
+ *
+ * Fitur:
+ *  - Candlestick M1/M5/M15
+ *  - EMA 20 / 50
+ *  - Support / Resistance
+ *  - Fibonacci 38.2 / 50 / 61.8
+ *  - Garis harga live + badge Bid/Ask/Mid
+ *  - Garis entry sinyal
+ *  - Scroll horizontal, zoom pinch, pan vertikal
+ *  - Crosshair
+ *  - Auto-scroll ke candle terakhir (tap area kanan)
+ *  - Margin kanan lebar → candle terakhir tidak tertutup
+ */
 class CandleChartView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
@@ -22,6 +37,7 @@ class CandleChartView @JvmOverloads constructor(
     private var showEma = true
     private var showLevels = true
     private var showFib = true
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var offset = 0
     private var autoScroll = true
@@ -33,7 +49,8 @@ class CandleChartView @JvmOverloads constructor(
     private var crossY = -1f
     private var showCross = false
 
-    private val scaleDetector = ScaleGestureDetector(context,
+    private val scaleDetector = ScaleGestureDetector(
+        context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 scaleY = (scaleY * detector.scaleFactor).coerceIn(0.35f, 4f)
@@ -41,22 +58,31 @@ class CandleChartView @JvmOverloads constructor(
                 invalidate()
                 return true
             }
-        })
+        }
+    )
 
     fun setData(
-        data: List<Candle>, tf: String, live: Double?, sig: SignalResult?,
-        bidP: Double? = null, askP: Double? = null
+        data: List<Candle>,
+        tf: String,
+        live: Double?,
+        sig: SignalResult?,
+        bidP: Double? = null,
+        askP: Double? = null
     ) {
         candles = data.takeLast(200)
         timeframe = tf
         currentPrice = live ?: candles.lastOrNull()?.close
-        bid = bidP; ask = askP; signal = sig
+        bid = bidP
+        ask = askP
+        signal = sig
         if (autoScroll) offset = 0
         invalidate()
     }
 
     fun setLayers(ema: Boolean, levels: Boolean, fib: Boolean = true) {
-        showEma = ema; showLevels = levels; showFib = fib
+        showEma = ema
+        showLevels = levels
+        showFib = fib
         invalidate()
     }
 
@@ -64,13 +90,18 @@ class CandleChartView @JvmOverloads constructor(
         scaleDetector.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                dragX = e.x; dragY = e.y
-                showCross = true; crossX = e.x; crossY = e.y
-                invalidate(); return true
+                dragX = e.x
+                dragY = e.y
+                showCross = true
+                crossX = e.x
+                crossY = e.y
+                invalidate()
+                return true
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!scaleDetector.isInProgress) {
-                    val dx = e.x - dragX; val dy = e.y - dragY
+                    val dx = e.x - dragX
+                    val dy = e.y - dragY
                     if (kotlin.math.abs(dx) > 6) {
                         autoScroll = false
                         offset += if (dx > 0) -1 else 1
@@ -81,13 +112,20 @@ class CandleChartView @JvmOverloads constructor(
                         scaleY = (scaleY + dy * 0.002f).coerceIn(0.35f, 4f)
                         dragY = e.y
                     }
-                    crossX = e.x; crossY = e.y; invalidate()
+                    crossX = e.x
+                    crossY = e.y
+                    invalidate()
                 }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (e.x > width * 0.85f) { autoScroll = true; offset = 0 }
-                showCross = false; invalidate(); return true
+                if (e.x > width * 0.85f) {
+                    autoScroll = true
+                    offset = 0
+                }
+                showCross = false
+                invalidate()
+                return true
             }
         }
         return true
@@ -96,11 +134,13 @@ class CandleChartView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(Color.rgb(8, 12, 18))
         if (candles.isEmpty()) {
-            paint.color = Color.LTGRAY; paint.textSize = 15f
-            canvas.drawText("Menunggu Biquote...", 24f, height / 2f, paint)
+            paint.color = Color.LTGRAY
+            paint.textSize = 15f
+            canvas.drawText("Menunggu data Biquote 1s...", 24f, height / 2f, paint)
             return
         }
 
+        // Margin kanan lebar → candle terakhir + badge harga tidak tertutup
         val priceColW = 88f
         val left = 8f
         val right = width - priceColW
@@ -111,13 +151,16 @@ class CandleChartView @JvmOverloads constructor(
 
         val end = candles.size - offset
         val start = max(0, end - visibleCount)
-        val visible = if (start < end && end <= candles.size) candles.subList(start, end) else candles.takeLast(visibleCount)
-
+        val visible =
+            if (start < end && end <= candles.size) candles.subList(start, end)
+            else candles.takeLast(visibleCount)
         if (visible.isEmpty()) return
 
         var hi = visible.maxOf { it.high }
         var lo = visible.minOf { it.low }
         currentPrice?.let { hi = max(hi, it); lo = min(lo, it) }
+        bid?.let { hi = max(hi, it); lo = min(lo, it) }
+        ask?.let { hi = max(hi, it); lo = min(lo, it) }
         signal?.let {
             hi = maxOf(hi, it.entry, it.tp1, it.tp2)
             lo = minOf(lo, it.entry, it.sl)
@@ -128,14 +171,19 @@ class CandleChartView @JvmOverloads constructor(
         val range = max(((hi - lo) + pad * 2) / scaleY, 1.0)
         val maxP = mid + range / 2
         val minP = mid - range / 2
+
         fun y(p: Double): Float {
             val t = ((p - minP) / (maxP - minP)).coerceIn(0.02, 0.98)
             return (bottom - t * h).toFloat()
         }
 
-        paint.textSize = 12f; paint.typeface = Typeface.DEFAULT_BOLD; paint.color = Color.WHITE
-        canvas.drawText("XAU/USD $timeframe", left, 16f, paint)
-        paint.typeface = Typeface.DEFAULT; paint.textSize = 10f
+        // Header H/L
+        paint.textSize = 12f
+        paint.typeface = Typeface.DEFAULT_BOLD
+        paint.color = Color.WHITE
+        canvas.drawText("XAU/USD  $timeframe", left, 16f, paint)
+        paint.typeface = Typeface.DEFAULT
+        paint.textSize = 10f
         paint.color = Color.rgb(129, 199, 132)
         canvas.drawText("H ${"%.2f".format(hi)}", left + 110f, 16f, paint)
         paint.color = Color.rgb(239, 83, 80)
@@ -143,17 +191,19 @@ class CandleChartView @JvmOverloads constructor(
         paint.color = Color.GRAY
         canvas.drawText(if (autoScroll) "AUTO" else "SCROLL", left + 270f, 16f, paint)
 
+        // Grid + skala harga kanan
         paint.textSize = 9f
         for (i in 0..5) {
             val gy = top + h * i / 5f
-            paint.color = Color.rgb(28, 34, 44); paint.strokeWidth = 1f
+            paint.color = Color.rgb(28, 34, 44)
+            paint.strokeWidth = 1f
             canvas.drawLine(left, gy, right, gy, paint)
             val pv = maxP - (maxP - minP) * i / 5.0
             paint.color = Color.rgb(158, 168, 178)
             canvas.drawText("%.2f".format(pv), right + 4f, gy + 3f, paint)
         }
 
-        // +1 padding agar candle terakhir tidak mentok/terpotong
+        // Candles (+1 padding agar last candle penuh)
         val n = visible.size
         val step = w / (n + 1f)
         val bw = max(2.2f, step * 0.55f)
@@ -168,11 +218,13 @@ class CandleChartView @JvmOverloads constructor(
             canvas.drawRect(x - bw / 2, tb, x + bw / 2, max(bb, tb + 1f), paint)
         }
 
+        // EMA 20 / 50
         if (showEma) {
             val closes = visible.map { it.close }
             fun emaLine(period: Int, col: Int) {
                 val vals = IndicatorEngine.ema(closes, period)
-                paint.color = col; paint.strokeWidth = 2f
+                paint.color = col
+                paint.strokeWidth = 2f
                 var prev: PointF? = null
                 vals.forEachIndexed { i, v ->
                     if (!v.isNaN()) {
@@ -186,6 +238,7 @@ class CandleChartView @JvmOverloads constructor(
             emaLine(50, Color.rgb(66, 165, 245))
         }
 
+        // S/R + Fibonacci
         if (showLevels && candles.isNotEmpty()) {
             val ind = IndicatorEngine.snapshot(candles)
             paint.strokeWidth = 1.3f
@@ -195,24 +248,41 @@ class CandleChartView @JvmOverloads constructor(
             paint.color = Color.rgb(239, 83, 80)
             canvas.drawLine(left, y(ind.resistance), right, y(ind.resistance), paint)
             paint.pathEffect = null
+            paint.textSize = 9f
+            paint.color = Color.rgb(100, 181, 246)
+            canvas.drawText("S ${"%.2f".format(ind.support)}", left + 4, y(ind.support) - 3, paint)
+            paint.color = Color.rgb(239, 83, 80)
+            canvas.drawText("R ${"%.2f".format(ind.resistance)}", left + 4, y(ind.resistance) - 3, paint)
+
             if (showFib) {
                 paint.strokeWidth = 1f
-                paint.color = Color.argb(120, 186, 104, 200)
-                listOf(ind.fib382, ind.fib50, ind.fib618).forEach { f ->
+                paint.color = Color.argb(130, 186, 104, 200)
+                listOf(
+                    "38.2" to ind.fib382,
+                    "50" to ind.fib50,
+                    "61.8" to ind.fib618
+                ).forEach { (lab, f) ->
                     canvas.drawLine(left, y(f), right, y(f), paint)
+                    paint.textSize = 8f
+                    canvas.drawText(lab, right - 28f, y(f) - 2, paint)
                 }
             }
         }
 
+        // Live mid line + badge
         currentPrice?.let { cp ->
             val py = y(cp)
-            paint.color = Color.WHITE; paint.strokeWidth = 1.4f
+            paint.color = Color.WHITE
+            paint.strokeWidth = 1.4f
             paint.pathEffect = DashPathEffect(floatArrayOf(5f, 4f), 0f)
             canvas.drawLine(left, py, right, py, paint)
             paint.pathEffect = null
             drawBadge(canvas, right, py, "%.2f".format(cp), Color.rgb(38, 50, 56))
         }
+        bid?.let { drawBadge(canvas, right, y(it), "B ${"%.2f".format(it)}", Color.rgb(30, 80, 50)) }
+        ask?.let { drawBadge(canvas, right, y(it), "A ${"%.2f".format(it)}", Color.rgb(90, 40, 40)) }
 
+        // Entry line
         signal?.let {
             val sy = y(it.entry)
             paint.color = if (it.side == "BUY") Color.rgb(0, 230, 118) else Color.rgb(255, 82, 82)
@@ -222,22 +292,25 @@ class CandleChartView @JvmOverloads constructor(
             canvas.drawText("${it.entryType} ${"%.2f".format(it.entry)}", left + 4, sy - 4, paint)
         }
 
+        // Crosshair
         if (showCross && crossX in left..right && crossY in top..bottom) {
-            paint.color = Color.argb(160, 200, 200, 200); paint.strokeWidth = 1f
+            paint.color = Color.argb(160, 200, 200, 200)
+            paint.strokeWidth = 1f
             canvas.drawLine(crossX, top, crossX, bottom, paint)
             canvas.drawLine(left, crossY, right, crossY, paint)
             val priceAt = minP + (1.0 - ((crossY - top) / h).toDouble()) * (maxP - minP)
-            paint.textSize = 10f; paint.color = Color.YELLOW
+            paint.textSize = 10f
+            paint.color = Color.YELLOW
             canvas.drawText("%.2f".format(priceAt), crossX + 6, crossY - 6, paint)
         }
     }
 
-    private fun drawBadge(canvas: Canvas, right: Float, py: Float, label: String, bg: Int) {
+    private fun drawBadge(canvas: Canvas, rightEdge: Float, py: Float, label: String, bg: Int) {
         paint.textSize = 10f
         val tw = paint.measureText(label) + 10f
         paint.color = bg
-        canvas.drawRoundRect(right + 2f, py - 10f, right + 2f + tw, py + 10f, 3f, 3f, paint)
+        canvas.drawRoundRect(rightEdge + 2f, py - 10f, rightEdge + 2f + tw, py + 10f, 3f, 3f, paint)
         paint.color = Color.WHITE
-        canvas.drawText(label, right + 6f, py + 3.5f, paint)
+        canvas.drawText(label, rightEdge + 6f, py + 3.5f, paint)
     }
 }
