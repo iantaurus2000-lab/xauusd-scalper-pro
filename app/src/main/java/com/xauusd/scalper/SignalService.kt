@@ -37,11 +37,26 @@ class SignalService : Service() {
                             lastReadyKey = key
                             entryNotif(sig.side, "${sig.entryType} @ ${"%.2f".format(sig.entry)}")
                             if (AppPrefs.vibeOn(applicationContext)) vibrate()
+                            // Notif biasa + Telegram ringkas
                             TelegramHelper.sendSignal(applicationContext, sig, snap.price)
+                            // AUTO ENTRY → paket order untuk EA MT5
+                            if (AppPrefs.autoEntry(applicationContext)) {
+                                val ok = AutoEntryBridge.send(applicationContext, sig, snap.price)
+                                startForeground(
+                                    1,
+                                    statusNotif(
+                                        if (ok) "AUTO ${sig.entryType} terkirim EA"
+                                        else "AUTO gagal (cek Telegram)"
+                                    )
+                                )
+                            }
                         }
                     }
                     val text = when {
-                        sig != null && sig.state.contains("READY") -> "${sig.entryType} READY"
+                        sig != null && sig.state.contains("READY") -> {
+                            val auto = if (AppPrefs.autoEntry(applicationContext)) " · AUTO" else ""
+                            "${sig.entryType} READY$auto"
+                        }
                         sig != null -> "${sig.entryType} (layar)"
                         else -> st["watch"] ?: "WAIT"
                     }
@@ -59,7 +74,9 @@ class SignalService : Service() {
         val ch = "xau_status"
         if (Build.VERSION.SDK_INT >= 26) {
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(NotificationChannel(ch, "Status", NotificationManager.IMPORTANCE_LOW))
+                .createNotificationChannel(
+                    NotificationChannel(ch, "Status", NotificationManager.IMPORTANCE_LOW)
+                )
         }
         return NotificationCompat.Builder(this, ch)
             .setContentTitle("XAUUSD Scalper")
@@ -104,11 +121,13 @@ class SignalService : Service() {
             } else {
                 @Suppress("DEPRECATION")
                 (getSystemService(VIBRATOR_SERVICE) as Vibrator).let {
-                    if (Build.VERSION.SDK_INT >= 26)
+                    if (Build.VERSION.SDK_INT >= 26) {
                         it.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 150, 400), -1))
+                    }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDestroy() {
