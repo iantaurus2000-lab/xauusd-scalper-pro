@@ -18,12 +18,19 @@ class SignalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "TEST_NOTIF") {
-            entryNotif("TEST", "Tes dering & getar")
-            if (AppPrefs.vibeOn(this)) vibrate()
-            return START_STICKY
+        when (intent?.action) {
+            "TEST_NOTIF" -> {
+                entryNotif("TEST", "Tes dering & getar", null)
+                if (AppPrefs.vibeOn(this)) vibrate()
+                return START_STICKY
+            }
+            "COPY_OPEN" -> {
+                // Dipanggil dari aksi notifikasi — MainActivity handle lebih baik;
+                // di service hanya pastikan status
+                return START_STICKY
+            }
         }
-        startForeground(1, statusNotif("Monitoring..."))
+        startForeground(1, statusNotif("Monitoring HP..."))
         scope.launch {
             while (isActive) {
                 val delayMs = AppPrefs.scanSec(applicationContext) * 1000L
@@ -35,28 +42,29 @@ class SignalService : Service() {
                         val key = "${sig.side}-${"%.2f".format(sig.entry)}-${sig.candleTime}"
                         if (key != lastReadyKey) {
                             lastReadyKey = key
-                            entryNotif(sig.side, "${sig.entryType} @ ${"%.2f".format(sig.entry)}")
+                            // Auto-salin ke clipboard agar tinggal tempel di MT5 HP
+                            val lot = try {
+                                RiskHelper.autoLot(applicationContext, sig.entry, sig.sl)
+                                    .takeIf { it >= 0.01 } ?: AppPrefs.autoLot(applicationContext)
+                            } catch (_: Exception) {
+                                AppPrefs.autoLot(applicationContext)
+                            }
+                            PhoneTradeHelper.copyAll(applicationContext, sig, lot)
+                            entryNotif(
+                                sig.side,
+                                "${sig.entryType} ${"%.2f".format(sig.entry)} · sudah disalin",
+                                sig
+                            )
                             if (AppPrefs.vibeOn(applicationContext)) vibrate()
-                            // Notif biasa + Telegram ringkas
                             TelegramHelper.sendSignal(applicationContext, sig, snap.price)
-                            // AUTO ENTRY → paket order untuk EA MT5
                             if (AppPrefs.autoEntry(applicationContext)) {
-                                val ok = AutoEntryBridge.send(applicationContext, sig, snap.price)
-                                startForeground(
-                                    1,
-                                    statusNotif(
-                                        if (ok) "AUTO ${sig.entryType} terkirim EA"
-                                        else "AUTO gagal (cek Telegram)"
-                                    )
-                                )
+                                AutoEntryBridge.send(applicationContext, sig, snap.price)
                             }
                         }
                     }
                     val text = when {
-                        sig != null && sig.state.contains("READY") -> {
-                            val auto = if (AppPrefs.autoEntry(applicationContext)) " · AUTO" else ""
-                            "${sig.entryType} READY$auto"
-                        }
+                        sig != null && sig.state.contains("READY") ->
+                            "${sig.entryType} READY · clipboard"
                         sig != null -> "${sig.entryType} (layar)"
                         else -> st["watch"] ?: "WAIT"
                     }
@@ -87,7 +95,7 @@ class SignalService : Service() {
             .build()
     }
 
-    private fun entryNotif(side: String, detail: String) {
+    private fun entryNotif(side: String, detail: String, sig: SignalResult?) {
         val ch = "xau_entry"
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
@@ -98,13 +106,42 @@ class SignalService : Service() {
                 }
             )
         }
+
+        // Tap notifikasi → buka MainActivity
+        val openApp = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Aksi: buka MT5/Exness
+        val openTrade = PendingIntent.getActivity(
+            this, 1,
+            Intent(this, MainActivity::class.java).apply {
+                action = "OPEN_TRADE"
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val b = NotificationCompat.Builder(this, ch)
             .setContentTitle("$side ENTRY READY")
             .setContentText(detail)
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    if (sig != null)
+                        "${sig.entryType}\nEntry ${"%.2f".format(sig.entry)}\nSL ${"%.2f".format(sig.sl)}\nTP ${"%.2f".format(sig.tp1)}\nSudah di clipboard — ketuk BUKA MT5"
+                    else detail
+                )
+            )
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setContentIntent(openApp)
+            .addAction(android.R.drawable.ic_menu_share, "BUKA MT5", openTrade)
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
+
         if (AppPrefs.soundOn(this)) {
             b.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
         } else {

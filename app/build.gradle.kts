@@ -10,8 +10,8 @@ android {
         applicationId = "com.xauusd.scalper.v5"
         minSdk = 26
         targetSdk = 34
-        versionCode = 59
-        versionName = "5.9.0"
+        versionCode = 60
+        versionName = "5.10.0"
     }
     buildTypes {
         release {
