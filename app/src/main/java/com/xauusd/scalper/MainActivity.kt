@@ -89,6 +89,9 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopAll() }
         findViewById<Button>(R.id.btnMenu).setOnClickListener { showMenu() }
 
+        findViewById<Button>(R.id.btnCopyAll).setOnClickListener { onCopyAll() }
+        findViewById<Button>(R.id.btnOpenMt5).setOnClickListener { onOpenTrade() }
+
         findViewById<Button>(R.id.btnCopyEntry).setOnClickListener { copyPrice(lastSignal?.entry, "Entry") }
         findViewById<Button>(R.id.btnCopySl).setOnClickListener { copyPrice(lastSignal?.sl, "SL") }
         findViewById<Button>(R.id.btnCopyTp).setOnClickListener { copyPrice(lastSignal?.tp1, "TP1") }
@@ -97,8 +100,53 @@ class MainActivity : Activity() {
 
         ticker.isSelected = true
         refreshResultsBar()
+        log.text = "Log: ${PhoneTradeHelper.appLabel(this)}"
+        handleIntent(intent)
         startPriceLoop()
         fullScan()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == "OPEN_TRADE") {
+            onOpenTrade()
+        }
+    }
+
+    private fun currentLot(): Double {
+        val sig = lastSignal ?: return AppPrefs.autoLot(this)
+        return try {
+            RiskHelper.autoLot(this, sig.entry, sig.sl).takeIf { it >= 0.01 }
+                ?: AppPrefs.autoLot(this)
+        } catch (_: Exception) {
+            AppPrefs.autoLot(this)
+        }
+    }
+
+    private fun onCopyAll() {
+        val sig = lastSignal
+        if (sig == null) {
+            Toast.makeText(this, "Belum ada sinyal READY", Toast.LENGTH_SHORT).show()
+            return
+        }
+        PhoneTradeHelper.copyAll(this, sig, currentLot())
+        Toast.makeText(this, "Semua field order disalin", Toast.LENGTH_SHORT).show()
+        log.text = "Log: clipboard ${sig.entryType} ${"%.2f".format(sig.entry)}"
+    }
+
+    private fun onOpenTrade() {
+        val sig = lastSignal
+        if (sig != null) {
+            PhoneTradeHelper.copyAndOpen(this, sig, currentLot())
+            log.text = "Log: buka trading + salin ${sig.entryType}"
+        } else {
+            PhoneTradeHelper.openTradingApp(this)
+            log.text = "Log: buka ${PhoneTradeHelper.appLabel(this)}"
+        }
     }
 
     private fun copyPrice(v: Double?, label: String) {
@@ -129,127 +177,66 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu() {
-        val sound = if (AppPrefs.soundOn(this)) "ON" else "OFF"
-        val vibe = if (AppPrefs.vibeOn(this)) "ON" else "OFF"
-        val ema = if (AppPrefs.showEma(this)) "ON" else "OFF"
-        val sr = if (AppPrefs.showSr(this)) "ON" else "OFF"
-        val fib = if (AppPrefs.showFib(this)) "ON" else "OFF"
-        val auto = if (AppPrefs.autoEntry(this)) "ON" else "OFF"
         val items = arrayOf(
-            "🔄 Scan sinyal sekarang",
-            "📊 Hasil entry (Winrate)",
-            "🤖 Auto Entry MT5: $auto",
-            "📦 Lot auto entry: ${"%.2f".format(AppPrefs.autoLot(this))}",
-            "ℹ️ Cara auto entry Exness",
-            "📈 EMA chart: $ema",
-            "📏 Support/Resistance: $sr",
-            "📐 Fibonacci: $fib",
-            "🎯 Min score: ${AppPrefs.minScore(this)}%",
-            "⏱ Interval scan: ${AppPrefs.scanSec(this)}s",
-            "🔔 Suara notif: $sound",
-            "📳 Getar: $vibe",
+            "🔄 Scan sekarang",
+            "📋 Salin semua + buka MT5",
+            "📊 Hasil entry",
+            "📱 Status app trading: ${PhoneTradeHelper.appLabel(this)}",
+            "ℹ️ Mode HP saja (baca)",
+            "📱 Telegram",
+            "💰 Risk / lot",
+            "🎯 Min score ${AppPrefs.minScore(this)}%",
+            "🔔 Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}",
+            "📳 Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}",
             "▶️ TES notif",
-            "📱 Telegram (wajib untuk auto)",
-            "💰 Risk management",
-            "■ Stop monitor",
+            "■ Stop",
             "✕ Keluar"
         )
         AlertDialog.Builder(this)
-            .setTitle("KONTROL")
+            .setTitle("MODE HP")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> fullScan()
-                    1 -> AlertDialog.Builder(this).setTitle("Hasil Entry")
+                    1 -> onOpenTrade()
+                    2 -> AlertDialog.Builder(this).setTitle("Hasil")
                         .setMessage(ResultsTracker.stats(this))
                         .setPositiveButton("OK", null)
                         .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
                         .show()
-                    2 -> {
-                        val next = !AppPrefs.autoEntry(this)
-                        if (next && !TelegramHelper.isConfigured(this)) {
-                            Toast.makeText(this, "Isi Telegram dulu (token+chat)", Toast.LENGTH_LONG).show()
-                            showTelegram()
-                        } else {
-                            AppPrefs.setAutoEntry(this, next)
-                            Toast.makeText(
-                                this,
-                                if (next) "Auto Entry ON → kirim LIMIT ke EA MT5" else "Auto Entry OFF",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                    3 -> Toast.makeText(this, PhoneTradeHelper.appLabel(this), Toast.LENGTH_LONG).show()
+                    4 -> AlertDialog.Builder(this).setTitle("Hanya HP")
+                        .setMessage(
+                            "MT5/Exness di HP tidak mengizinkan APK lain pasang order otomatis.\n\n" +
+                                "Alur tercepat di HP:\n" +
+                                "1. START di background\n" +
+                                "2. Notif ENTRY READY (suara+getar)\n" +
+                                "3. Order sudah di clipboard otomatis\n" +
+                                "4. Ketuk BUKA MT5 di notif/app\n" +
+                                "5. Buat Pending Order → tempel Entry/SL/TP\n\n" +
+                                "Itu solusi resmi paling cepat tanpa PC."
+                        ).setPositiveButton("OK", null).show()
+                    5 -> showTelegram()
+                    6 -> showRisk()
+                    7 -> {
+                        val opts = arrayOf("65%", "72%", "78%", "85%")
+                        AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
+                            AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
+                            fullScan()
+                        }.show()
                     }
-                    3 -> pickLot()
-                    4 -> showAutoHelp()
-                    5 -> { AppPrefs.setEma(this, !AppPrefs.showEma(this)); renderChart() }
-                    6 -> { AppPrefs.setSr(this, !AppPrefs.showSr(this)); renderChart() }
-                    7 -> { AppPrefs.setFib(this, !AppPrefs.showFib(this)); renderChart() }
-                    8 -> pickMinScore()
-                    9 -> pickScanSec()
+                    8 -> AppPrefs.setSound(this, !AppPrefs.soundOn(this))
+                    9 -> AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
                     10 -> {
-                        AppPrefs.setSound(this, !AppPrefs.soundOn(this))
-                        Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        startForegroundService(
+                            Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
+                        )
                     }
-                    11 -> {
-                        AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
-                        Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                    }
-                    12 -> testNotif()
-                    13 -> showTelegram()
-                    14 -> showRisk()
-                    15 -> stopAll()
-                    16 -> exitApp()
+                    11 -> stopAll()
+                    12 -> exitApp()
                 }
             }
             .setNegativeButton("Tutup", null)
             .show()
-    }
-
-    private fun pickLot() {
-        val opts = arrayOf("0.01", "0.02", "0.05", "0.10", "0.20")
-        AlertDialog.Builder(this).setTitle("Lot auto entry").setItems(opts) { _, i ->
-            AppPrefs.setAutoLot(this, opts[i].toDouble())
-            Toast.makeText(this, "Lot ${opts[i]}", Toast.LENGTH_SHORT).show()
-        }.show()
-    }
-
-    private fun showAutoHelp() {
-        AlertDialog.Builder(this)
-            .setTitle("Auto Entry → MT5 Exness")
-            .setMessage(
-                "MT5 HP tidak bisa menerima order dari APK (batasan MetaQuotes).\n\n" +
-                    "Solusi gratis:\n" +
-                    "1) APK kirim paket BUY/SELL LIMIT ke Telegram\n" +
-                    "2) EA XAUUSD_AutoLimit_EA.mq5 di MT5 PC/VPS\n" +
-                    "   menaruh order di akun Exness\n\n" +
-                    "File EA: folder mt5/ di GitHub repo\n" +
-                    "Isi token Telegram SAMA di APK dan EA\n" +
-                    "Tools→Options→EA: izinkan https://api.telegram.org\n\n" +
-                    "Uji di DEMO dulu."
-            )
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    private fun pickMinScore() {
-        val opts = arrayOf("65% (sering)", "72% (default)", "78% (ketat)", "85% (sangat ketat)")
-        AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
-            AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
-            fullScan()
-        }.show()
-    }
-
-    private fun pickScanSec() {
-        val opts = arrayOf("12 detik", "18 detik", "30 detik", "45 detik")
-        AlertDialog.Builder(this).setTitle("Interval scan").setItems(opts) { _, i ->
-            AppPrefs.setScanSec(this, listOf(12, 18, 30, 45)[i])
-            Toast.makeText(this, "Restart START setelah ubah", Toast.LENGTH_SHORT).show()
-        }.show()
-    }
-
-    private fun testNotif() {
-        val i = Intent(this, SignalService::class.java).apply { action = "TEST_NOTIF" }
-        startForegroundService(i)
-        Toast.makeText(this, "Tes notif dikirim", Toast.LENGTH_SHORT).show()
     }
 
     private fun showTelegram() {
@@ -314,8 +301,7 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE 1s"
         connection.setTextColor(Color.rgb(0, 230, 118))
-        val auto = if (AppPrefs.autoEntry(this)) " · AUTO" else ""
-        log.text = "Log: START$auto • min ${AppPrefs.minScore(this)}%"
+        log.text = "Log: START HP · ${PhoneTradeHelper.appLabel(this)}"
         fullScan()
     }
 
@@ -407,7 +393,7 @@ class MainActivity : Activity() {
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: score ${st["score"]}% • ${st["steps"]}"
+                    log.text = "Log: score ${st["score"]}% • ${PhoneTradeHelper.appLabel(this@MainActivity)}"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { log.text = "Log: ${e.message}" }
@@ -442,12 +428,15 @@ class MainActivity : Activity() {
             boxTp2.text = "TP2\n--"
         } else {
             lamp.text = if (sig.side == "BUY") "🟢" else "🔴"
-            val autoTag = if (AppPrefs.autoEntry(this)) " · AUTO" else ""
-            signalState.text = "${sig.entryType}\n${sig.state}$autoTag"
+            signalState.text = "${sig.entryType}\n${sig.state}"
             boxEntry.text = "Entry\n${"%.2f".format(sig.entry)}"
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
             boxTp2.text = "TP2\n${"%.2f".format(sig.tp2)}"
+            // Saat READY di layar: auto-isi clipboard agar siap tempel di MT5 HP
+            if (sig.state.contains("READY")) {
+                PhoneTradeHelper.copyAll(this, sig, currentLot())
+            }
         }
     }
 
