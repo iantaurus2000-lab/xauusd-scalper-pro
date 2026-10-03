@@ -8,12 +8,27 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- Android 11+: izinkan deteksi MT5/Exness tanpa QUERY_ALL_PACKAGES -->
+    <queries>
+        <package android:name="net.metaquotes.metatrader5" />
+        <package android:name="net.metaquotes.metatrader5.group" />
+        <package android:name="net.metaquotes.metatrader4" />
+        <package android:name="com.exness.android.pa" />
+        <package android:name="com.exness.android" />
+        <package android:name="com.exness.trading" />
+        <package android:name="com.exness.mobile" />
+        <package android:name="com.exness.client" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
         android:icon="@android:drawable/ic_menu_compass"
-        android:label="XAUUSD Scalper v5"
+        android:label="XAUUSD Scalper"
         android:supportsRtl="true"
         android:theme="@style/Theme.XAUUSDScalper"
         android:usesCleartextTraffic="true">
@@ -21,7 +36,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,19 +1,15 @@
 package com.xauusd.scalper
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 
-/**
- * Buka app trading di HP.
- * Banyak build MT5/Exness punya package name berbeda → scan + pilih manual.
- */
 object PhoneTradeHelper {
 
     private const val PREF = "trade_app_pref"
@@ -27,14 +23,7 @@ object PhoneTradeHelper {
         "com.exness.android",
         "com.exness.trading",
         "com.exness.mobile",
-        "com.exness.client",
-        "net.metaquotes.metatrader5.exness",
-        "net.metaquotes.metatrader4.exness"
-    )
-
-    private val KEYWORDS = listOf(
-        "metatrader", "metaquotes", "exness", "mt5", "mt4",
-        "xauusd", "forex", "trading"
+        "com.exness.client"
     )
 
     data class TradeApp(val packageName: String, val label: String)
@@ -42,153 +31,116 @@ object PhoneTradeHelper {
     fun preferred(ctx: Context): String? =
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_PKG, null)
 
-    fun setPreferred(ctx: Context, pkg: String) {
+    fun setPreferred(ctx: Context, pkg: String) =
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString(KEY_PKG, pkg).apply()
-    }
 
-    fun clearPreferred(ctx: Context) {
+    fun clearPreferred(ctx: Context) =
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().remove(KEY_PKG).apply()
-    }
 
     fun copyAll(ctx: Context, sig: SignalResult, lot: Double): String {
         val text = buildString {
             appendLine(sig.entryType)
-            appendLine("Symbol: XAUUSD")
+            appendLine("XAUUSD")
             appendLine("Entry: ${"%.2f".format(sig.entry)}")
             appendLine("SL: ${"%.2f".format(sig.sl)}")
             appendLine("TP: ${"%.2f".format(sig.tp1)}")
             appendLine("Lot: ${"%.2f".format(lot)}")
         }.trim()
-        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("XAUUSD_ORDER", text))
+        try {
+            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("ORDER", text))
+        } catch (_: Exception) {
+        }
         return text
     }
 
-    /** Scan semua app terpasang yang mirip trading */
     fun findInstalled(ctx: Context): List<TradeApp> {
         val pm = ctx.packageManager
-        val found = LinkedHashMap<String, TradeApp>()
-
-        // 1) daftar dikenal
+        val out = ArrayList<TradeApp>()
         for (pkg in KNOWN) {
             try {
                 pm.getPackageInfo(pkg, 0)
+                val launch = pm.getLaunchIntentForPackage(pkg) ?: continue
+                if (launch.resolveActivity(pm) == null) continue
                 val label = try {
                     pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
                 } catch (_: Exception) {
-                    pkg
+                    pkg.substringAfterLast('.')
                 }
-                found[pkg] = TradeApp(pkg, label)
-            } catch (_: PackageManager.NameNotFoundException) {
+                out.add(TradeApp(pkg, label))
+            } catch (_: Exception) {
             }
         }
-
-        // 2) scan semua package (keyword)
-        try {
-            @Suppress("DEPRECATION")
-            val apps: List<ApplicationInfo> = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            for (ai in apps) {
-                val pkg = ai.packageName.lowercase()
-                val label = try {
-                    pm.getApplicationLabel(ai).toString()
-                } catch (_: Exception) {
-                    ai.packageName
-                }
-                val hay = (pkg + " " + label.lowercase())
-                if (KEYWORDS.any { hay.contains(it) }) {
-                    // harus bisa diluncurkan
-                    if (pm.getLaunchIntentForPackage(ai.packageName) != null) {
-                        found[ai.packageName] = TradeApp(ai.packageName, label)
-                    }
-                }
-            }
-        } catch (_: Exception) {
-        }
-
-        return found.values.toList().sortedBy { it.label.lowercase() }
+        return out
     }
 
     fun appLabel(ctx: Context): String {
+        val list = findInstalled(ctx)
         val pref = preferred(ctx)
         if (pref != null) {
-            val hit = findInstalled(ctx).firstOrNull { it.packageName == pref }
-            if (hit != null) return hit.label
+            list.firstOrNull { it.packageName == pref }?.let { return it.label }
         }
-        val list = findInstalled(ctx)
         return when {
-            list.isEmpty() -> "Belum ketemu MT5/Exness"
+            list.isEmpty() -> "Install MT5 dulu"
             list.size == 1 -> list[0].label
-            else -> "${list.size} app trading"
+            else -> "${list.size} app siap"
         }
     }
 
     private fun launchPkg(ctx: Context, pkg: String): Boolean {
         return try {
-            val launch = ctx.packageManager.getLaunchIntentForPackage(pkg)
-            if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                ctx.startActivity(launch)
-                true
-            } else false
+            val intent = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(intent)
+            true
         } catch (e: Exception) {
-            Toast.makeText(ctx, "Gagal buka: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
             false
         }
     }
 
-    /** Buka app: preferensi → satu app → dialog pilih → Play Store */
     fun openTradingApp(ctx: Context, forcePick: Boolean = false): Boolean {
-        val list = findInstalled(ctx)
-        val pref = preferred(ctx)
+        return try {
+            val list = findInstalled(ctx)
+            val pref = preferred(ctx)
 
-        if (!forcePick && pref != null && list.any { it.packageName == pref }) {
-            return launchPkg(ctx, pref)
-        }
-
-        if (list.isEmpty()) {
-            showInstallHelp(ctx)
-            return false
-        }
-
-        if (!forcePick && list.size == 1) {
+            if (!forcePick && pref != null && list.any { it.packageName == pref }) {
+                return launchPkg(ctx, pref)
+            }
+            if (list.isEmpty()) {
+                showInstall(ctx)
+                return false
+            }
+            if (!forcePick && list.size == 1) {
+                setPreferred(ctx, list[0].packageName)
+                return launchPkg(ctx, list[0].packageName)
+            }
+            if (ctx is Activity && !ctx.isFinishing) {
+                val labels = list.map { it.label }.toTypedArray()
+                AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("Pilih app")
+                    .setItems(labels) { _, i ->
+                        setPreferred(ctx, list[i].packageName)
+                        launchPkg(ctx, list[i].packageName)
+                    }
+                    .setNeutralButton("Play Store") { _, _ -> openStore(ctx) }
+                    .setNegativeButton("Batal", null)
+                    .show()
+                return true
+            }
             setPreferred(ctx, list[0].packageName)
-            return launchPkg(ctx, list[0].packageName)
+            launchPkg(ctx, list[0].packageName)
+        } catch (e: Exception) {
+            Toast.makeText(ctx, "Error buka app: ${e.message}", Toast.LENGTH_LONG).show()
+            false
         }
-
-        // Dialog pilih
-        if (ctx is android.app.Activity) {
-            val labels = list.map { it.label }.toTypedArray()
-            AlertDialog.Builder(ctx)
-                .setTitle("Pilih app trading")
-                .setItems(labels) { _, which ->
-                    val app = list[which]
-                    setPreferred(ctx, app.packageName)
-                    launchPkg(ctx, app.packageName)
-                }
-                .setNeutralButton("Play Store MT5") { _, _ -> openPlayStore(ctx) }
-                .setNegativeButton("Batal", null)
-                .show()
-            return true
-        }
-
-        // Non-activity: buka yang pertama
-        setPreferred(ctx, list[0].packageName)
-        return launchPkg(ctx, list[0].packageName)
     }
 
-    fun copyAndOpen(ctx: Context, sig: SignalResult, lot: Double): Boolean {
-        copyAll(ctx, sig, lot)
-        Toast.makeText(ctx, "Order disalin", Toast.LENGTH_SHORT).show()
-        return openTradingApp(ctx)
-    }
-
-    private fun openPlayStore(ctx: Context) {
+    private fun openStore(ctx: Context) {
         try {
             ctx.startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("market://details?id=net.metaquotes.metatrader5")
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=net.metaquotes.metatrader5"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         } catch (_: Exception) {
             try {
@@ -199,28 +151,25 @@ object PhoneTradeHelper {
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             } catch (_: Exception) {
-                Toast.makeText(ctx, "Install MT5 dari Play Store", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, "Buka Play Store → cari MetaTrader 5", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun showInstallHelp(ctx: Context) {
-        if (ctx is android.app.Activity) {
-            AlertDialog.Builder(ctx)
-                .setTitle("MT5 / Exness belum terdeteksi")
-                .setMessage(
-                    "Pastikan MT5 atau aplikasi Exness sudah terpasang.\n\n" +
-                        "Jika sudah terpasang tapi tetap gagal:\n" +
-                        "• Menu → Pilih app trading manual\n" +
-                        "• Atau install ulang MT5 dari Play Store\n\n" +
-                        "Setelah install, tekan lagi BUKA MT5."
-                )
-                .setPositiveButton("Play Store MT5") { _, _ -> openPlayStore(ctx) }
-                .setNegativeButton("Tutup", null)
-                .show()
+    private fun showInstall(ctx: Context) {
+        if (ctx is Activity && !ctx.isFinishing) {
+            try {
+                AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("MT5 belum terpasang")
+                    .setMessage("Install MetaTrader 5 atau Exness dari Play Store, lalu tekan BUKA MT5 lagi.")
+                    .setPositiveButton("Play Store") { _, _ -> openStore(ctx) }
+                    .setNegativeButton("OK", null)
+                    .show()
+            } catch (_: Exception) {
+                openStore(ctx)
+            }
         } else {
-            Toast.makeText(ctx, "Install MT5/Exness dulu", Toast.LENGTH_LONG).show()
-            openPlayStore(ctx)
+            openStore(ctx)
         }
     }
 }

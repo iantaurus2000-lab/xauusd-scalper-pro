@@ -57,7 +57,26 @@ class MainActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        setContentView(R.layout.activity_main)
+        try {
+            setContentView(R.layout.activity_main)
+            bindViews()
+            wireButtons()
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+
+            ticker.isSelected = true
+            refreshResultsBar()
+            log.text = "Log v5.12 · ${PhoneTradeHelper.appLabel(this)}"
+            handleIntent(intent)
+            startPriceLoop()
+            fullScan()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Init error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun bindViews() {
         price = findViewById(R.id.price)
         priceChange = findViewById(R.id.priceChange)
         connection = findViewById(R.id.connection)
@@ -77,33 +96,34 @@ class MainActivity : Activity() {
         boxTp1 = findViewById(R.id.boxTp1)
         boxTp2 = findViewById(R.id.boxTp2)
         chart = findViewById(R.id.chart)
+    }
 
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-
+    private fun wireButtons() {
         findViewById<Button>(R.id.tfM1).setOnClickListener { timeframe = "M1"; renderChart() }
         findViewById<Button>(R.id.tfM5).setOnClickListener { timeframe = "M5"; renderChart() }
         findViewById<Button>(R.id.tfM15).setOnClickListener { timeframe = "M15"; renderChart() }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAll() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopAll() }
-        findViewById<Button>(R.id.btnMenu).setOnClickListener { showMenu() }
-
+        findViewById<Button>(R.id.btnMenu).setOnClickListener {
+            try {
+                showMenu()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Menu error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         findViewById<Button>(R.id.btnCopyAll).setOnClickListener { onCopyAll() }
-        findViewById<Button>(R.id.btnOpenMt5).setOnClickListener { onOpenTrade() }
-
+        findViewById<Button>(R.id.btnOpenMt5).setOnClickListener {
+            try {
+                onOpenTrade()
+            } catch (e: Exception) {
+                Toast.makeText(this, "BUKA MT5 error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         findViewById<Button>(R.id.btnCopyEntry).setOnClickListener { copyPrice(lastSignal?.entry, "Entry") }
         findViewById<Button>(R.id.btnCopySl).setOnClickListener { copyPrice(lastSignal?.sl, "SL") }
         findViewById<Button>(R.id.btnCopyTp).setOnClickListener { copyPrice(lastSignal?.tp1, "TP1") }
         findViewById<Button>(R.id.btnMarkWin).setOnClickListener { markResult("WIN") }
         findViewById<Button>(R.id.btnMarkLoss).setOnClickListener { markResult("LOSS") }
-
-        ticker.isSelected = true
-        refreshResultsBar()
-        log.text = "Log: ${PhoneTradeHelper.appLabel(this)}"
-        handleIntent(intent)
-        startPriceLoop()
-        fullScan()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -114,6 +134,9 @@ class MainActivity : Activity() {
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == "OPEN_TRADE") onOpenTrade()
     }
+
+    private fun dlg(): AlertDialog.Builder =
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
 
     private fun currentLot(): Double {
         val sig = lastSignal ?: return AppPrefs.autoLot(this)
@@ -132,17 +155,14 @@ class MainActivity : Activity() {
             return
         }
         PhoneTradeHelper.copyAll(this, sig, currentLot())
-        Toast.makeText(this, "Semua field order disalin", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Order disalin ke clipboard", Toast.LENGTH_SHORT).show()
     }
 
     private fun onOpenTrade() {
-        val sig = lastSignal
-        if (sig != null) {
-            PhoneTradeHelper.copyAll(this, sig, currentLot())
-        }
+        lastSignal?.let { PhoneTradeHelper.copyAll(this, it, currentLot()) }
         val ok = PhoneTradeHelper.openTradingApp(this)
         log.text = if (ok) "Log: buka ${PhoneTradeHelper.appLabel(this)}"
-        else "Log: gagal buka — pilih app di menu"
+        else "Log: install MT5 dulu (Play Store)"
     }
 
     private fun copyPrice(v: Double?, label: String) {
@@ -173,54 +193,61 @@ class MainActivity : Activity() {
 
     private fun showMenu() {
         val items = arrayOf(
-            "🔄 Scan sekarang",
-            "🚀 BUKA MT5 / pilih app",
-            "📋 Salin semua order",
-            "📱 Pilih app trading manual",
-            "📊 Hasil entry",
-            "ℹ️ Status: ${PhoneTradeHelper.appLabel(this)}",
-            "📱 Telegram",
-            "💰 Risk",
-            "🎯 Min score ${AppPrefs.minScore(this)}%",
-            "🔔 Suara",
-            "📳 Getar",
-            "▶️ TES notif",
-            "■ Stop",
-            "✕ Keluar"
+            "Scan sinyal sekarang",
+            "BUKA MT5 / Exness",
+            "Pilih app trading",
+            "Salin semua order",
+            "Hasil entry (winrate)",
+            "Telegram",
+            "Risk / balance",
+            "Min score: ${AppPrefs.minScore(this)}%",
+            "Suara notif: ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}",
+            "Getar: ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}",
+            "TES notifikasi",
+            "Stop monitor",
+            "Keluar"
         )
-        AlertDialog.Builder(this)
-            .setTitle("MODE HP")
+        dlg().setTitle("Menu")
             .setItems(items) { _, which ->
-                when (which) {
-                    0 -> fullScan()
-                    1 -> onOpenTrade()
-                    2 -> onCopyAll()
-                    3 -> {
-                        PhoneTradeHelper.clearPreferred(this)
-                        PhoneTradeHelper.openTradingApp(this, forcePick = true)
+                try {
+                    when (which) {
+                        0 -> fullScan()
+                        1 -> onOpenTrade()
+                        2 -> {
+                            PhoneTradeHelper.clearPreferred(this)
+                            PhoneTradeHelper.openTradingApp(this, forcePick = true)
+                        }
+                        3 -> onCopyAll()
+                        4 -> dlg().setTitle("Hasil entry")
+                            .setMessage(ResultsTracker.stats(this))
+                            .setPositiveButton("OK", null)
+                            .setNeutralButton("Hapus") { _, _ ->
+                                ResultsTracker.clear(this)
+                                refreshResultsBar()
+                            }.show()
+                        5 -> showTelegram()
+                        6 -> showRisk()
+                        7 -> dlg().setTitle("Min score")
+                            .setItems(arrayOf("65%", "72%", "78%", "85%")) { _, i ->
+                                AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
+                                fullScan()
+                            }.show()
+                        8 -> {
+                            AppPrefs.setSound(this, !AppPrefs.soundOn(this))
+                            Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        }
+                        9 -> {
+                            AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
+                            Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        }
+                        10 -> startForegroundService(
+                            Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
+                        )
+                        11 -> stopAll()
+                        12 -> exitApp()
                     }
-                    4 -> AlertDialog.Builder(this).setTitle("Hasil")
-                        .setMessage(ResultsTracker.stats(this))
-                        .setPositiveButton("OK", null)
-                        .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
-                        .show()
-                    5 -> Toast.makeText(this, PhoneTradeHelper.appLabel(this), Toast.LENGTH_LONG).show()
-                    6 -> showTelegram()
-                    7 -> showRisk()
-                    8 -> {
-                        val opts = arrayOf("65%", "72%", "78%", "85%")
-                        AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
-                            AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
-                            fullScan()
-                        }.show()
-                    }
-                    9 -> AppPrefs.setSound(this, !AppPrefs.soundOn(this))
-                    10 -> AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
-                    11 -> startForegroundService(
-                        Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
-                    )
-                    12 -> stopAll()
-                    13 -> exitApp()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Aksi gagal: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Tutup", null)
@@ -228,7 +255,7 @@ class MainActivity : Activity() {
     }
 
     private fun showTelegram() {
-        val pad = (12 * resources.displayMetrics.density).toInt()
+        val pad = (16 * resources.displayMetrics.density).toInt()
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
@@ -247,14 +274,15 @@ class MainActivity : Activity() {
         }
         box.addView(tokenIn)
         box.addView(chatIn)
-        AlertDialog.Builder(this).setTitle("Telegram").setView(box)
+        dlg().setTitle("Telegram").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
-                TelegramHelper.save(this, tokenIn.text.toString(), chatIn.text.toString())
+                TelegramHelper.save(this, tokenIn.text.toString().trim(), chatIn.text.toString().trim())
+                Toast.makeText(this, "Telegram disimpan", Toast.LENGTH_SHORT).show()
             }.setNegativeButton("Batal", null).show()
     }
 
     private fun showRisk() {
-        val pad = (12 * resources.displayMetrics.density).toInt()
+        val pad = (16 * resources.displayMetrics.density).toInt()
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
@@ -273,7 +301,7 @@ class MainActivity : Activity() {
         }
         box.addView(bal)
         box.addView(risk)
-        AlertDialog.Builder(this).setTitle("Risk").setView(box)
+        dlg().setTitle("Risk").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
                 RiskHelper.save(
                     this,
@@ -282,15 +310,20 @@ class MainActivity : Activity() {
                     3.0,
                     1
                 )
+                Toast.makeText(this, "Risk disimpan", Toast.LENGTH_SHORT).show()
             }.setNegativeButton("Tutup", null).show()
     }
 
     private fun startAll() {
-        startForegroundService(Intent(this, SignalService::class.java))
-        connection.text = "LIVE 1s"
-        connection.setTextColor(Color.rgb(0, 230, 118))
-        log.text = "Log: START · ${PhoneTradeHelper.appLabel(this)}"
-        fullScan()
+        try {
+            startForegroundService(Intent(this, SignalService::class.java))
+            connection.text = "LIVE 1s"
+            connection.setTextColor(Color.rgb(0, 230, 118))
+            log.text = "Log: START · ${PhoneTradeHelper.appLabel(this)}"
+            fullScan()
+        } catch (e: Exception) {
+            Toast.makeText(this, "START gagal: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun stopAll() {
@@ -328,7 +361,7 @@ class MainActivity : Activity() {
                     val ch = if (prev.isNaN()) 0.0 else t.mid - prev
                     priceChange.text = (if (ch >= 0) "+" else "") + "%.2f".format(ch)
                     priceChange.setTextColor(
-                        if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80)
+                        if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(255, 138, 128)
                     )
                     spreadLine.text = "Spread %.2f".format(t.spread)
                     highLow.text =
@@ -400,7 +433,7 @@ class MainActivity : Activity() {
         m5Bias.text = "M5 ${st["bias"] ?: "-"}"
         m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
         confidence.text = "${stars(starN.coerceIn(0, 5))}  $score%"
-        signalDetail.text = st["steps"] ?: "M5 → Sweep → Wick → Tip → BOS"
+        signalDetail.text = st["steps"] ?: "M5 · Sweep · Wick · Tip · BOS"
 
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
