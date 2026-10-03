@@ -134,20 +134,23 @@ class MainActivity : Activity() {
         val ema = if (AppPrefs.showEma(this)) "ON" else "OFF"
         val sr = if (AppPrefs.showSr(this)) "ON" else "OFF"
         val fib = if (AppPrefs.showFib(this)) "ON" else "OFF"
+        val auto = if (AppPrefs.autoEntry(this)) "ON" else "OFF"
         val items = arrayOf(
             "🔄 Scan sinyal sekarang",
             "📊 Hasil entry (Winrate)",
+            "🤖 Auto Entry MT5: $auto",
+            "📦 Lot auto entry: ${"%.2f".format(AppPrefs.autoLot(this))}",
+            "ℹ️ Cara auto entry Exness",
             "📈 EMA chart: $ema",
             "📏 Support/Resistance: $sr",
             "📐 Fibonacci: $fib",
-            "🎯 Min score sinyal: ${AppPrefs.minScore(this)}%",
+            "🎯 Min score: ${AppPrefs.minScore(this)}%",
             "⏱ Interval scan: ${AppPrefs.scanSec(this)}s",
             "🔔 Suara notif: $sound",
             "📳 Getar: $vibe",
-            "▶️ TES notif dering+getar",
-            "📱 Telegram",
+            "▶️ TES notif",
+            "📱 Telegram (wajib untuk auto)",
             "💰 Risk management",
-            "ℹ️ Strategy",
             "■ Stop monitor",
             "✕ Keluar"
         )
@@ -161,24 +164,69 @@ class MainActivity : Activity() {
                         .setPositiveButton("OK", null)
                         .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
                         .show()
-                    2 -> { AppPrefs.setEma(this, !AppPrefs.showEma(this)); renderChart(); Toast.makeText(this, "EMA diubah", Toast.LENGTH_SHORT).show() }
-                    3 -> { AppPrefs.setSr(this, !AppPrefs.showSr(this)); renderChart(); Toast.makeText(this, "S/R diubah", Toast.LENGTH_SHORT).show() }
-                    4 -> { AppPrefs.setFib(this, !AppPrefs.showFib(this)); renderChart(); Toast.makeText(this, "Fib diubah", Toast.LENGTH_SHORT).show() }
-                    5 -> pickMinScore()
-                    6 -> pickScanSec()
-                    7 -> { AppPrefs.setSound(this, !AppPrefs.soundOn(this)); Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show() }
-                    8 -> { AppPrefs.setVibe(this, !AppPrefs.vibeOn(this)); Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show() }
-                    9 -> testNotif()
-                    10 -> showTelegram()
-                    11 -> showRisk()
-                    12 -> AlertDialog.Builder(this).setTitle("Strategy")
-                        .setMessage("M5 Bias → Sweep → Wick → Tip → BOS → Score\nMin score default 72% (bisa diubah di menu)\nENTRY READY lebih sering di sesi aktif\nNotif suara hanya READY")
-                        .setPositiveButton("OK", null).show()
-                    13 -> stopAll()
-                    14 -> exitApp()
+                    2 -> {
+                        val next = !AppPrefs.autoEntry(this)
+                        if (next && !TelegramHelper.isConfigured(this)) {
+                            Toast.makeText(this, "Isi Telegram dulu (token+chat)", Toast.LENGTH_LONG).show()
+                            showTelegram()
+                        } else {
+                            AppPrefs.setAutoEntry(this, next)
+                            Toast.makeText(
+                                this,
+                                if (next) "Auto Entry ON → kirim LIMIT ke EA MT5" else "Auto Entry OFF",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                    3 -> pickLot()
+                    4 -> showAutoHelp()
+                    5 -> { AppPrefs.setEma(this, !AppPrefs.showEma(this)); renderChart() }
+                    6 -> { AppPrefs.setSr(this, !AppPrefs.showSr(this)); renderChart() }
+                    7 -> { AppPrefs.setFib(this, !AppPrefs.showFib(this)); renderChart() }
+                    8 -> pickMinScore()
+                    9 -> pickScanSec()
+                    10 -> {
+                        AppPrefs.setSound(this, !AppPrefs.soundOn(this))
+                        Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                    }
+                    11 -> {
+                        AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
+                        Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                    }
+                    12 -> testNotif()
+                    13 -> showTelegram()
+                    14 -> showRisk()
+                    15 -> stopAll()
+                    16 -> exitApp()
                 }
             }
             .setNegativeButton("Tutup", null)
+            .show()
+    }
+
+    private fun pickLot() {
+        val opts = arrayOf("0.01", "0.02", "0.05", "0.10", "0.20")
+        AlertDialog.Builder(this).setTitle("Lot auto entry").setItems(opts) { _, i ->
+            AppPrefs.setAutoLot(this, opts[i].toDouble())
+            Toast.makeText(this, "Lot ${opts[i]}", Toast.LENGTH_SHORT).show()
+        }.show()
+    }
+
+    private fun showAutoHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("Auto Entry → MT5 Exness")
+            .setMessage(
+                "MT5 HP tidak bisa menerima order dari APK (batasan MetaQuotes).\n\n" +
+                    "Solusi gratis:\n" +
+                    "1) APK kirim paket BUY/SELL LIMIT ke Telegram\n" +
+                    "2) EA XAUUSD_AutoLimit_EA.mq5 di MT5 PC/VPS\n" +
+                    "   menaruh order di akun Exness\n\n" +
+                    "File EA: folder mt5/ di GitHub repo\n" +
+                    "Isi token Telegram SAMA di APK dan EA\n" +
+                    "Tools→Options→EA: izinkan https://api.telegram.org\n\n" +
+                    "Uji di DEMO dulu."
+            )
+            .setPositiveButton("OK", null)
             .show()
     }
 
@@ -186,16 +234,15 @@ class MainActivity : Activity() {
         val opts = arrayOf("65% (sering)", "72% (default)", "78% (ketat)", "85% (sangat ketat)")
         AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
             AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
-            Toast.makeText(this, "Min score ${AppPrefs.minScore(this)}%", Toast.LENGTH_SHORT).show()
             fullScan()
         }.show()
     }
 
     private fun pickScanSec() {
         val opts = arrayOf("12 detik", "18 detik", "30 detik", "45 detik")
-        AlertDialog.Builder(this).setTitle("Interval scan background").setItems(opts) { _, i ->
+        AlertDialog.Builder(this).setTitle("Interval scan").setItems(opts) { _, i ->
             AppPrefs.setScanSec(this, listOf(12, 18, 30, 45)[i])
-            Toast.makeText(this, "Scan ${AppPrefs.scanSec(this)}s — restart START", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Restart START setelah ubah", Toast.LENGTH_SHORT).show()
         }.show()
     }
 
@@ -207,16 +254,24 @@ class MainActivity : Activity() {
 
     private fun showTelegram() {
         val pad = (12 * resources.displayMetrics.density).toInt()
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
         val tokenIn = EditText(this).apply {
-            hint = "Bot Token"; setText(TelegramHelper.token(this@MainActivity))
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+            hint = "Bot Token"
+            setText(TelegramHelper.token(this@MainActivity))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
         }
         val chatIn = EditText(this).apply {
-            hint = "Chat ID"; setText(TelegramHelper.chatId(this@MainActivity))
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+            hint = "Chat ID"
+            setText(TelegramHelper.chatId(this@MainActivity))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
         }
-        box.addView(tokenIn); box.addView(chatIn)
+        box.addView(tokenIn)
+        box.addView(chatIn)
         AlertDialog.Builder(this).setTitle("Telegram").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
                 TelegramHelper.save(this, tokenIn.text.toString(), chatIn.text.toString())
@@ -225,20 +280,33 @@ class MainActivity : Activity() {
 
     private fun showRisk() {
         val pad = (12 * resources.displayMetrics.density).toInt()
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad) }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
         val bal = EditText(this).apply {
-            hint = "Balance"; setText(RiskHelper.balance(this@MainActivity).toString())
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+            hint = "Balance"
+            setText(RiskHelper.balance(this@MainActivity).toString())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
         }
         val risk = EditText(this).apply {
-            hint = "Risk %"; setText(RiskHelper.riskPct(this@MainActivity).toString())
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+            hint = "Risk %"
+            setText(RiskHelper.riskPct(this@MainActivity).toString())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
         }
-        box.addView(bal); box.addView(risk)
+        box.addView(bal)
+        box.addView(risk)
         AlertDialog.Builder(this).setTitle("Risk").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
-                RiskHelper.save(this, bal.text.toString().toDoubleOrNull() ?: 1000.0,
-                    risk.text.toString().toDoubleOrNull() ?: 1.0, 3.0, 1)
+                RiskHelper.save(
+                    this,
+                    bal.text.toString().toDoubleOrNull() ?: 1000.0,
+                    risk.text.toString().toDoubleOrNull() ?: 1.0,
+                    3.0,
+                    1
+                )
             }.setNegativeButton("Tutup", null).show()
     }
 
@@ -246,12 +314,16 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE 1s"
         connection.setTextColor(Color.rgb(0, 230, 118))
-        log.text = "Log: START • scan ${AppPrefs.scanSec(this)}s • min ${AppPrefs.minScore(this)}%"
+        val auto = if (AppPrefs.autoEntry(this)) " · AUTO" else ""
+        log.text = "Log: START$auto • min ${AppPrefs.minScore(this)}%"
         fullScan()
     }
 
     private fun stopAll() {
-        try { stopService(Intent(this, SignalService::class.java)) } catch (_: Exception) {}
+        try {
+            stopService(Intent(this, SignalService::class.java))
+        } catch (_: Exception) {
+        }
         connection.text = "STOPPED"
         connection.setTextColor(Color.rgb(255, 152, 0))
         log.text = "Log: STOP"
@@ -259,7 +331,9 @@ class MainActivity : Activity() {
 
     private fun exitApp() {
         stopAll()
-        tickJob?.cancel(); scanJob?.cancel(); scope.cancel()
+        tickJob?.cancel()
+        scanJob?.cancel()
+        scope.cancel()
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
     }
@@ -271,23 +345,34 @@ class MainActivity : Activity() {
                 try {
                     val t = withContext(Dispatchers.IO) { Market.tick() }
                     val prev = lastPrice
-                    lastPrice = t.mid; lastBid = t.bid; lastAsk = t.ask
+                    lastPrice = t.mid
+                    lastBid = t.bid
+                    lastAsk = t.ask
                     if (sessionHigh.isNaN() || t.mid > sessionHigh) sessionHigh = t.mid
                     if (sessionLow.isNaN() || t.mid < sessionLow) sessionLow = t.mid
                     price.text = "%.2f".format(t.mid)
                     val ch = if (prev.isNaN()) 0.0 else t.mid - prev
                     priceChange.text = (if (ch >= 0) "+" else "") + "%.2f".format(ch)
-                    priceChange.setTextColor(if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80))
+                    priceChange.setTextColor(
+                        if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(239, 83, 80)
+                    )
                     spreadLine.text = "Spread %.2f".format(t.spread)
-                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
+                    highLow.text =
+                        "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     connection.text = "LIVE 1s"
                     connection.setTextColor(Color.rgb(0, 230, 118))
                     fun bump(list: List<Candle>): List<Candle> {
                         if (list.isEmpty()) return list
                         val last = list.last()
-                        return list.dropLast(1) + last.copy(close = t.mid, high = maxOf(last.high, t.mid), low = minOf(last.low, t.mid))
+                        return list.dropLast(1) + last.copy(
+                            close = t.mid,
+                            high = maxOf(last.high, t.mid),
+                            low = minOf(last.low, t.mid)
+                        )
                     }
-                    m1 = bump(m1); m5 = bump(m5); m15 = bump(m15)
+                    m1 = bump(m1)
+                    m5 = bump(m5)
+                    m15 = bump(m15)
                     renderChart()
                 } catch (e: Exception) {
                     connection.text = "OFFLINE"
@@ -306,14 +391,17 @@ class MainActivity : Activity() {
                 val s = Market.snapshot(lastPrice)
                 val (sig, st) = SignalEngine.evaluate(s, AppPrefs.minScore(this@MainActivity))
                 withContext(Dispatchers.Main) {
-                    m1 = s.m1; m5 = s.m5; m15 = s.m15
+                    m1 = s.m1
+                    m5 = s.m5
+                    m15 = s.m15
                     lastPrice = s.price
                     if (s.m1.isNotEmpty()) {
                         sessionHigh = s.m1.maxOf { it.high }
                         sessionLow = s.m1.minOf { it.low }
                     }
                     price.text = "%.2f".format(s.price)
-                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
+                    highLow.text =
+                        "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     spreadLine.text = "Spread %.2f".format(s.spread)
                     ticker.text = SessionHelper.tickerText()
                     ticker.isSelected = true
@@ -348,10 +436,14 @@ class MainActivity : Activity() {
                 else -> "⚪"
             }
             signalState.text = w
-            boxEntry.text = "Entry\n--"; boxSl.text = "SL\n--"; boxTp1.text = "TP1\n--"; boxTp2.text = "TP2\n--"
+            boxEntry.text = "Entry\n--"
+            boxSl.text = "SL\n--"
+            boxTp1.text = "TP1\n--"
+            boxTp2.text = "TP2\n--"
         } else {
             lamp.text = if (sig.side == "BUY") "🟢" else "🔴"
-            signalState.text = "${sig.entryType}\n${sig.state}"
+            val autoTag = if (AppPrefs.autoEntry(this)) " · AUTO" else ""
+            signalState.text = "${sig.entryType}\n${sig.state}$autoTag"
             boxEntry.text = "Entry\n${"%.2f".format(sig.entry)}"
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
@@ -367,7 +459,8 @@ class MainActivity : Activity() {
         }
         chart.setLayers(AppPrefs.showEma(this), AppPrefs.showSr(this), AppPrefs.showFib(this))
         chart.setData(
-            data, timeframe,
+            data,
+            timeframe,
             if (lastPrice.isNaN()) null else lastPrice,
             lastSignal,
             if (lastBid.isNaN()) null else lastBid,
@@ -376,7 +469,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        tickJob?.cancel(); scanJob?.cancel(); scope.cancel()
+        tickJob?.cancel()
+        scanJob?.cancel()
+        scope.cancel()
         super.onDestroy()
     }
 }
