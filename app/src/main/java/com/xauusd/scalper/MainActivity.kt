@@ -112,9 +112,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == "OPEN_TRADE") {
-            onOpenTrade()
-        }
+        if (intent?.action == "OPEN_TRADE") onOpenTrade()
     }
 
     private fun currentLot(): Double {
@@ -135,18 +133,16 @@ class MainActivity : Activity() {
         }
         PhoneTradeHelper.copyAll(this, sig, currentLot())
         Toast.makeText(this, "Semua field order disalin", Toast.LENGTH_SHORT).show()
-        log.text = "Log: clipboard ${sig.entryType} ${"%.2f".format(sig.entry)}"
     }
 
     private fun onOpenTrade() {
         val sig = lastSignal
         if (sig != null) {
-            PhoneTradeHelper.copyAndOpen(this, sig, currentLot())
-            log.text = "Log: buka trading + salin ${sig.entryType}"
-        } else {
-            PhoneTradeHelper.openTradingApp(this)
-            log.text = "Log: buka ${PhoneTradeHelper.appLabel(this)}"
+            PhoneTradeHelper.copyAll(this, sig, currentLot())
         }
+        val ok = PhoneTradeHelper.openTradingApp(this)
+        log.text = if (ok) "Log: buka ${PhoneTradeHelper.appLabel(this)}"
+        else "Log: gagal buka — pilih app di menu"
     }
 
     private fun copyPrice(v: Double?, label: String) {
@@ -168,26 +164,26 @@ class MainActivity : Activity() {
         val time = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date())
         ResultsTracker.add(this, TradeResult(sig.side, sig.entry, sig.sl, sig.tp1, result, time))
         refreshResultsBar()
-        Toast.makeText(this, "Dicatat $result", Toast.LENGTH_SHORT).show()
     }
 
     private fun refreshResultsBar() {
         resultsBar.text = ResultsTracker.stats(this).lines().take(3).joinToString(" • ")
-            .ifBlank { "ENTRY RESULT • Win 0 • Loss 0 • WR 0%" }
+            .ifBlank { "Belum ada hasil entry." }
     }
 
     private fun showMenu() {
         val items = arrayOf(
             "🔄 Scan sekarang",
-            "📋 Salin semua + buka MT5",
+            "🚀 BUKA MT5 / pilih app",
+            "📋 Salin semua order",
+            "📱 Pilih app trading manual",
             "📊 Hasil entry",
-            "📱 Status app trading: ${PhoneTradeHelper.appLabel(this)}",
-            "ℹ️ Mode HP saja (baca)",
+            "ℹ️ Status: ${PhoneTradeHelper.appLabel(this)}",
             "📱 Telegram",
-            "💰 Risk / lot",
+            "💰 Risk",
             "🎯 Min score ${AppPrefs.minScore(this)}%",
-            "🔔 Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}",
-            "📳 Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}",
+            "🔔 Suara",
+            "📳 Getar",
             "▶️ TES notif",
             "■ Stop",
             "✕ Keluar"
@@ -198,41 +194,33 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> fullScan()
                     1 -> onOpenTrade()
-                    2 -> AlertDialog.Builder(this).setTitle("Hasil")
+                    2 -> onCopyAll()
+                    3 -> {
+                        PhoneTradeHelper.clearPreferred(this)
+                        PhoneTradeHelper.openTradingApp(this, forcePick = true)
+                    }
+                    4 -> AlertDialog.Builder(this).setTitle("Hasil")
                         .setMessage(ResultsTracker.stats(this))
                         .setPositiveButton("OK", null)
                         .setNeutralButton("Hapus") { _, _ -> ResultsTracker.clear(this); refreshResultsBar() }
                         .show()
-                    3 -> Toast.makeText(this, PhoneTradeHelper.appLabel(this), Toast.LENGTH_LONG).show()
-                    4 -> AlertDialog.Builder(this).setTitle("Hanya HP")
-                        .setMessage(
-                            "MT5/Exness di HP tidak mengizinkan APK lain pasang order otomatis.\n\n" +
-                                "Alur tercepat di HP:\n" +
-                                "1. START di background\n" +
-                                "2. Notif ENTRY READY (suara+getar)\n" +
-                                "3. Order sudah di clipboard otomatis\n" +
-                                "4. Ketuk BUKA MT5 di notif/app\n" +
-                                "5. Buat Pending Order → tempel Entry/SL/TP\n\n" +
-                                "Itu solusi resmi paling cepat tanpa PC."
-                        ).setPositiveButton("OK", null).show()
-                    5 -> showTelegram()
-                    6 -> showRisk()
-                    7 -> {
+                    5 -> Toast.makeText(this, PhoneTradeHelper.appLabel(this), Toast.LENGTH_LONG).show()
+                    6 -> showTelegram()
+                    7 -> showRisk()
+                    8 -> {
                         val opts = arrayOf("65%", "72%", "78%", "85%")
                         AlertDialog.Builder(this).setTitle("Min score").setItems(opts) { _, i ->
                             AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
                             fullScan()
                         }.show()
                     }
-                    8 -> AppPrefs.setSound(this, !AppPrefs.soundOn(this))
-                    9 -> AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
-                    10 -> {
-                        startForegroundService(
-                            Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
-                        )
-                    }
-                    11 -> stopAll()
-                    12 -> exitApp()
+                    9 -> AppPrefs.setSound(this, !AppPrefs.soundOn(this))
+                    10 -> AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
+                    11 -> startForegroundService(
+                        Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
+                    )
+                    12 -> stopAll()
+                    13 -> exitApp()
                 }
             }
             .setNegativeButton("Tutup", null)
@@ -301,7 +289,7 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, SignalService::class.java))
         connection.text = "LIVE 1s"
         connection.setTextColor(Color.rgb(0, 230, 118))
-        log.text = "Log: START HP · ${PhoneTradeHelper.appLabel(this)}"
+        log.text = "Log: START · ${PhoneTradeHelper.appLabel(this)}"
         fullScan()
     }
 
@@ -393,7 +381,7 @@ class MainActivity : Activity() {
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: score ${st["score"]}% • ${PhoneTradeHelper.appLabel(this@MainActivity)}"
+                    log.text = "Log: score ${st["score"]}% · ${PhoneTradeHelper.appLabel(this@MainActivity)}"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { log.text = "Log: ${e.message}" }
@@ -433,7 +421,6 @@ class MainActivity : Activity() {
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"
             boxTp2.text = "TP2\n${"%.2f".format(sig.tp2)}"
-            // Saat READY di layar: auto-isi clipboard agar siap tempel di MT5 HP
             if (sig.state.contains("READY")) {
                 PhoneTradeHelper.copyAll(this, sig, currentLot())
             }
@@ -448,8 +435,7 @@ class MainActivity : Activity() {
         }
         chart.setLayers(AppPrefs.showEma(this), AppPrefs.showSr(this), AppPrefs.showFib(this))
         chart.setData(
-            data,
-            timeframe,
+            data, timeframe,
             if (lastPrice.isNaN()) null else lastPrice,
             lastSignal,
             if (lastBid.isNaN()) null else lastBid,
