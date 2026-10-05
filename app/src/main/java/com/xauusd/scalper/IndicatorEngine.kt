@@ -3,9 +3,6 @@ package com.xauusd.scalper
 import kotlin.math.abs
 import kotlin.math.max
 
-/**
- * Indikator chart: EMA, RSI, ATR, Support/Resistance, Fibonacci.
- */
 object IndicatorEngine {
 
     fun ema(values: List<Double>, period: Int): List<Double> {
@@ -54,6 +51,29 @@ object IndicatorEngine {
         return trs.takeLast(period).average()
     }
 
+    /** MACD(12,26,9) — last histogram & signal direction */
+    data class Macd(val macd: Double, val signal: Double, val hist: Double, val bull: Boolean)
+
+    fun macd(closes: List<Double>): Macd {
+        if (closes.size < 30) return Macd(0.0, 0.0, 0.0, true)
+        val e12 = ema(closes, 12)
+        val e26 = ema(closes, 26)
+        val line = closes.indices.map { i ->
+            if (e12[i].isNaN() || e26[i].isNaN()) Double.NaN else e12[i] - e26[i]
+        }
+        val valid = line.map { if (it.isNaN()) 0.0 else it }
+        val sigLine = ema(valid, 9)
+        val m = line.lastOrNull()?.takeIf { !it.isNaN() } ?: 0.0
+        val s = sigLine.lastOrNull()?.takeIf { !it.isNaN() } ?: 0.0
+        val h = m - s
+        val prevH = if (line.size >= 2 && sigLine.size >= 2) {
+            val pm = line[line.size - 2].takeIf { !it.isNaN() } ?: 0.0
+            val ps = sigLine[sigLine.size - 2].takeIf { !it.isNaN() } ?: 0.0
+            pm - ps
+        } else 0.0
+        return Macd(m, s, h, h > prevH || h > 0)
+    }
+
     fun snapshot(c: List<Candle>): IndicatorSnapshot {
         val closes = c.map { it.close }
         val e20 = ema(closes, 20).lastOrNull()?.takeIf { !it.isNaN() } ?: closes.last()
@@ -63,12 +83,9 @@ object IndicatorEngine {
         val resistance = recent.maxOf { it.high }
         val range = (resistance - support).coerceAtLeast(0.5)
         return IndicatorSnapshot(
-            ema20 = e20,
-            ema50 = e50,
-            rsi14 = rsi(closes),
-            atr14 = atr(c),
-            support = support,
-            resistance = resistance,
+            ema20 = e20, ema50 = e50,
+            rsi14 = rsi(closes), atr14 = atr(c),
+            support = support, resistance = resistance,
             fib236 = resistance - range * 0.236,
             fib382 = resistance - range * 0.382,
             fib50 = resistance - range * 0.5,
