@@ -67,7 +67,7 @@ class MainActivity : Activity() {
 
             ticker.isSelected = true
             refreshResultsBar()
-            log.text = "Log v5.12 · ${PhoneTradeHelper.appLabel(this)}"
+            log.text = "Log v5.13 · signal engine full"
             handleIntent(intent)
             startPriceLoop()
             fullScan()
@@ -105,18 +105,15 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAll() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopAll() }
         findViewById<Button>(R.id.btnMenu).setOnClickListener {
-            try {
-                showMenu()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Menu error: ${e.message}", Toast.LENGTH_LONG).show()
+            try { showMenu() } catch (e: Exception) {
+                Toast.makeText(this, "Menu: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
-        findViewById<Button>(R.id.btnCopyAll).setOnClickListener { onCopyAll() }
+        // Satu aksi praktis: salin + buka MT5
+        findViewById<Button>(R.id.btnCopyAll).setOnClickListener { onSiapOrder() }
         findViewById<Button>(R.id.btnOpenMt5).setOnClickListener {
-            try {
-                onOpenTrade()
-            } catch (e: Exception) {
-                Toast.makeText(this, "BUKA MT5 error: ${e.message}", Toast.LENGTH_LONG).show()
+            try { onSiapOrder() } catch (e: Exception) {
+                Toast.makeText(this, "MT5: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
         findViewById<Button>(R.id.btnCopyEntry).setOnClickListener { copyPrice(lastSignal?.entry, "Entry") }
@@ -132,7 +129,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == "OPEN_TRADE") onOpenTrade()
+        if (intent?.action == "OPEN_TRADE") onSiapOrder()
     }
 
     private fun dlg(): AlertDialog.Builder =
@@ -148,21 +145,17 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun onCopyAll() {
+    /** Satu ketuk: salin order + buka MT5 (tanpa catatan) */
+    private fun onSiapOrder() {
         val sig = lastSignal
         if (sig == null) {
-            Toast.makeText(this, "Belum ada sinyal READY", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Belum ada sinyal — tunggu READY", Toast.LENGTH_SHORT).show()
             return
         }
         PhoneTradeHelper.copyAll(this, sig, currentLot())
-        Toast.makeText(this, "Order disalin ke clipboard", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun onOpenTrade() {
-        lastSignal?.let { PhoneTradeHelper.copyAll(this, it, currentLot()) }
-        val ok = PhoneTradeHelper.openTradingApp(this)
-        log.text = if (ok) "Log: buka ${PhoneTradeHelper.appLabel(this)}"
-        else "Log: install MT5 dulu (Play Store)"
+        PhoneTradeHelper.openTradingApp(this)
+        Toast.makeText(this, "Disalin · buka MT5 · tempel Entry", Toast.LENGTH_SHORT).show()
+        log.text = "Log: SIAP ORDER ${sig.entryType} ${"%.2f".format(sig.entry)}"
     }
 
     private fun copyPrice(v: Double?, label: String) {
@@ -173,7 +166,7 @@ class MainActivity : Activity() {
         val text = "%.2f".format(v)
         (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
             .setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(this, "$label $text disalin", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "$label $text", Toast.LENGTH_SHORT).show()
     }
 
     private fun markResult(result: String) {
@@ -192,18 +185,16 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu() {
+        val alarm = if (AppPrefs.alarmOn(this)) "ON" else "OFF"
         val items = arrayOf(
             "Scan sinyal sekarang",
-            "BUKA MT5 / Exness",
-            "Pilih app trading",
-            "Salin semua order",
+            "SIAP ORDER (salin + MT5)",
             "Hasil entry (winrate)",
+            "Alarm notif: $alarm",
+            "TES alarm",
+            "Min score: ${AppPrefs.minScore(this)}%",
             "Telegram",
             "Risk / balance",
-            "Min score: ${AppPrefs.minScore(this)}%",
-            "Suara notif: ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}",
-            "Getar: ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}",
-            "TES notifikasi",
             "Stop monitor",
             "Keluar"
         )
@@ -212,42 +203,33 @@ class MainActivity : Activity() {
                 try {
                     when (which) {
                         0 -> fullScan()
-                        1 -> onOpenTrade()
-                        2 -> {
-                            PhoneTradeHelper.clearPreferred(this)
-                            PhoneTradeHelper.openTradingApp(this, forcePick = true)
-                        }
-                        3 -> onCopyAll()
-                        4 -> dlg().setTitle("Hasil entry")
+                        1 -> onSiapOrder()
+                        2 -> dlg().setTitle("Hasil entry")
                             .setMessage(ResultsTracker.stats(this))
                             .setPositiveButton("OK", null)
                             .setNeutralButton("Hapus") { _, _ ->
-                                ResultsTracker.clear(this)
-                                refreshResultsBar()
+                                ResultsTracker.clear(this); refreshResultsBar()
                             }.show()
-                        5 -> showTelegram()
-                        6 -> showRisk()
-                        7 -> dlg().setTitle("Min score")
-                            .setItems(arrayOf("65%", "72%", "78%", "85%")) { _, i ->
-                                AppPrefs.setMinScore(this, listOf(65, 72, 78, 85)[i])
-                                fullScan()
-                            }.show()
-                        8 -> {
-                            AppPrefs.setSound(this, !AppPrefs.soundOn(this))
-                            Toast.makeText(this, "Suara ${if (AppPrefs.soundOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        3 -> {
+                            val next = !AppPrefs.alarmOn(this)
+                            AppPrefs.setAlarm(this, next)
+                            Toast.makeText(this, "Alarm ${if (next) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                         }
-                        9 -> {
-                            AppPrefs.setVibe(this, !AppPrefs.vibeOn(this))
-                            Toast.makeText(this, "Getar ${if (AppPrefs.vibeOn(this)) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                        }
-                        10 -> startForegroundService(
+                        4 -> startForegroundService(
                             Intent(this, SignalService::class.java).setAction("TEST_NOTIF")
                         )
-                        11 -> stopAll()
-                        12 -> exitApp()
+                        5 -> dlg().setTitle("Min score")
+                            .setItems(arrayOf("60% (sering)", "68%", "75%", "85% (ketat)")) { _, i ->
+                                AppPrefs.setMinScore(this, listOf(60, 68, 75, 85)[i])
+                                fullScan()
+                            }.show()
+                        6 -> showTelegram()
+                        7 -> showRisk()
+                        8 -> stopAll()
+                        9 -> exitApp()
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(this, "Aksi gagal: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Tutup", null)
@@ -277,7 +259,7 @@ class MainActivity : Activity() {
         dlg().setTitle("Telegram").setView(box)
             .setPositiveButton("Simpan") { _, _ ->
                 TelegramHelper.save(this, tokenIn.text.toString().trim(), chatIn.text.toString().trim())
-                Toast.makeText(this, "Telegram disimpan", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Tersimpan", Toast.LENGTH_SHORT).show()
             }.setNegativeButton("Batal", null).show()
     }
 
@@ -307,10 +289,9 @@ class MainActivity : Activity() {
                     this,
                     bal.text.toString().toDoubleOrNull() ?: 1000.0,
                     risk.text.toString().toDoubleOrNull() ?: 1.0,
-                    3.0,
-                    1
+                    3.0, 1
                 )
-                Toast.makeText(this, "Risk disimpan", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Tersimpan", Toast.LENGTH_SHORT).show()
             }.setNegativeButton("Tutup", null).show()
     }
 
@@ -319,18 +300,15 @@ class MainActivity : Activity() {
             startForegroundService(Intent(this, SignalService::class.java))
             connection.text = "LIVE 1s"
             connection.setTextColor(Color.rgb(0, 230, 118))
-            log.text = "Log: START · ${PhoneTradeHelper.appLabel(this)}"
+            log.text = "Log: START v5.13"
             fullScan()
         } catch (e: Exception) {
-            Toast.makeText(this, "START gagal: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "START: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun stopAll() {
-        try {
-            stopService(Intent(this, SignalService::class.java))
-        } catch (_: Exception) {
-        }
+        try { stopService(Intent(this, SignalService::class.java)) } catch (_: Exception) {}
         connection.text = "STOPPED"
         connection.setTextColor(Color.rgb(255, 152, 0))
         log.text = "Log: STOP"
@@ -364,8 +342,7 @@ class MainActivity : Activity() {
                         if (ch >= 0) Color.rgb(0, 230, 118) else Color.rgb(255, 138, 128)
                     )
                     spreadLine.text = "Spread %.2f".format(t.spread)
-                    highLow.text =
-                        "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
+                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     connection.text = "LIVE 1s"
                     connection.setTextColor(Color.rgb(0, 230, 118))
                     fun bump(list: List<Candle>): List<Candle> {
@@ -377,9 +354,7 @@ class MainActivity : Activity() {
                             low = minOf(last.low, t.mid)
                         )
                     }
-                    m1 = bump(m1)
-                    m5 = bump(m5)
-                    m15 = bump(m15)
+                    m1 = bump(m1); m5 = bump(m5); m15 = bump(m15)
                     renderChart()
                 } catch (e: Exception) {
                     connection.text = "OFFLINE"
@@ -398,23 +373,21 @@ class MainActivity : Activity() {
                 val s = Market.snapshot(lastPrice)
                 val (sig, st) = SignalEngine.evaluate(s, AppPrefs.minScore(this@MainActivity))
                 withContext(Dispatchers.Main) {
-                    m1 = s.m1
-                    m5 = s.m5
-                    m15 = s.m15
+                    m1 = s.m1; m5 = s.m5; m15 = s.m15
                     lastPrice = s.price
                     if (s.m1.isNotEmpty()) {
                         sessionHigh = s.m1.maxOf { it.high }
                         sessionLow = s.m1.minOf { it.low }
                     }
                     price.text = "%.2f".format(s.price)
-                    highLow.text =
-                        "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
+                    highLow.text = "H ${"%.2f".format(sessionHigh)}  L ${"%.2f".format(sessionLow)}"
                     spreadLine.text = "Spread %.2f".format(s.spread)
                     ticker.text = SessionHelper.tickerText()
                     ticker.isSelected = true
                     applySignal(sig, st)
                     renderChart()
-                    log.text = "Log: score ${st["score"]}% · ${PhoneTradeHelper.appLabel(this@MainActivity)}"
+                    val pat = st["pattern"] ?: "-"
+                    log.text = "Log: ${st["score"]}% · $pat · ${st["steps"]?.take(40)}"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { log.text = "Log: ${e.message}" }
@@ -431,9 +404,9 @@ class MainActivity : Activity() {
         val score = st["score"]?.toIntOrNull() ?: 0
         val starN = st["stars"]?.toIntOrNull() ?: (score / 20)
         m5Bias.text = "M5 ${st["bias"] ?: "-"}"
-        m1State.text = "M1 ${st["watch"] ?: "WAIT"}"
+        m1State.text = "${st["pattern"] ?: "-"} · ${st["watch"] ?: "WAIT"}"
         confidence.text = "${stars(starN.coerceIn(0, 5))}  $score%"
-        signalDetail.text = st["steps"] ?: "M5 · Sweep · Wick · Tip · BOS"
+        signalDetail.text = st["steps"] ?: "M5 · Sweep · Wick · Tip · BOS · EMA · RSI · MACD"
 
         if (sig == null) {
             val w = st["watch"] ?: "WAIT"
@@ -448,8 +421,9 @@ class MainActivity : Activity() {
             boxTp1.text = "TP1\n--"
             boxTp2.text = "TP2\n--"
         } else {
+            val head = if (sig.side == "BUY") "🟢 XAUUSD SCALPING" else "🔴 XAUUSD SCALPING"
             lamp.text = if (sig.side == "BUY") "🟢" else "🔴"
-            signalState.text = "${sig.entryType}\n${sig.state}"
+            signalState.text = "$head\n${sig.entryType} · ${sig.state}"
             boxEntry.text = "Entry\n${"%.2f".format(sig.entry)}"
             boxSl.text = "SL\n${"%.2f".format(sig.sl)}"
             boxTp1.text = "TP1\n${"%.2f".format(sig.tp1)}"

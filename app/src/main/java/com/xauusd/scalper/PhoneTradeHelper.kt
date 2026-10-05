@@ -6,7 +6,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 
@@ -38,13 +37,16 @@ object PhoneTradeHelper {
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().remove(KEY_PKG).apply()
 
     fun copyAll(ctx: Context, sig: SignalResult, lot: Double): String {
+        val head = if (sig.side == "BUY") "🟢 XAUUSD SCALPING" else "🔴 XAUUSD SCALPING"
         val text = buildString {
+            appendLine(head)
             appendLine(sig.entryType)
-            appendLine("XAUUSD")
             appendLine("Entry: ${"%.2f".format(sig.entry)}")
             appendLine("SL: ${"%.2f".format(sig.sl)}")
-            appendLine("TP: ${"%.2f".format(sig.tp1)}")
+            appendLine("TP1: ${"%.2f".format(sig.tp1)}")
+            appendLine("TP2: ${"%.2f".format(sig.tp2)}")
             appendLine("Lot: ${"%.2f".format(lot)}")
+            appendLine("★★★★★".take(sig.confidence) + "☆☆☆☆☆".take(5 - sig.confidence))
         }.trim()
         try {
             val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -77,13 +79,11 @@ object PhoneTradeHelper {
     fun appLabel(ctx: Context): String {
         val list = findInstalled(ctx)
         val pref = preferred(ctx)
-        if (pref != null) {
-            list.firstOrNull { it.packageName == pref }?.let { return it.label }
-        }
+        if (pref != null) list.firstOrNull { it.packageName == pref }?.let { return it.label }
         return when {
-            list.isEmpty() -> "Install MT5 dulu"
+            list.isEmpty() -> "Install MT5"
             list.size == 1 -> list[0].label
-            else -> "${list.size} app siap"
+            else -> "${list.size} app"
         }
     }
 
@@ -103,7 +103,6 @@ object PhoneTradeHelper {
         return try {
             val list = findInstalled(ctx)
             val pref = preferred(ctx)
-
             if (!forcePick && pref != null && list.any { it.packageName == pref }) {
                 return launchPkg(ctx, pref)
             }
@@ -131,7 +130,7 @@ object PhoneTradeHelper {
             setPreferred(ctx, list[0].packageName)
             launchPkg(ctx, list[0].packageName)
         } catch (e: Exception) {
-            Toast.makeText(ctx, "Error buka app: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, "${e.message}", Toast.LENGTH_LONG).show()
             false
         }
     }
@@ -145,13 +144,11 @@ object PhoneTradeHelper {
         } catch (_: Exception) {
             try {
                 ctx.startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://play.google.com/store/apps/details?id=net.metaquotes.metatrader5")
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=net.metaquotes.metatrader5"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             } catch (_: Exception) {
-                Toast.makeText(ctx, "Buka Play Store → cari MetaTrader 5", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -161,15 +158,13 @@ object PhoneTradeHelper {
             try {
                 AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle("MT5 belum terpasang")
-                    .setMessage("Install MetaTrader 5 atau Exness dari Play Store, lalu tekan BUKA MT5 lagi.")
+                    .setMessage("Install MetaTrader 5 dari Play Store.")
                     .setPositiveButton("Play Store") { _, _ -> openStore(ctx) }
                     .setNegativeButton("OK", null)
                     .show()
             } catch (_: Exception) {
                 openStore(ctx)
             }
-        } else {
-            openStore(ctx)
-        }
+        } else openStore(ctx)
     }
 }
