@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "XAUUSDScalperPro"
 include(":app")
+include(":pingtest")
